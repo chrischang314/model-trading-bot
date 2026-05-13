@@ -1,0 +1,66 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: kdb
+  namespace: model-trading-bot
+spec:
+  selector:
+    app: kdb
+  ports:
+    - name: ipc
+      port: 5000
+      targetPort: 5000
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: kdb
+  namespace: model-trading-bot
+spec:
+  serviceName: kdb
+  replicas: 1
+  selector:
+    matchLabels:
+      app: kdb
+  template:
+    metadata:
+      labels:
+        app: kdb
+    spec:
+      containers:
+        - name: kdb
+          image: model-trading-bot-kdb:local
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: ipc
+              containerPort: 5000
+          env:
+            - name: KDB_DATA_DIR
+              value: /data/kdb
+            - name: QLIC
+              value: /tmp/qlic
+          volumeMounts:
+            - name: kdb-data
+              mountPath: /data/kdb
+            - name: kdb-license
+              mountPath: /tmp/qlic
+              readOnly: true
+          readinessProbe:
+            tcpSocket:
+              port: 5000
+            initialDelaySeconds: 10
+            periodSeconds: 10
+      volumes:
+        - name: kdb-license
+          secret:
+            secretName: kdb-license
+            optional: true
+  volumeClaimTemplates:
+    - metadata:
+        name: kdb-data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: 5Gi
+

@@ -1,0 +1,367 @@
+:root {
+  color: #111827;
+  background: #f6f7f9;
+  font-family:
+    Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-width: 320px;
+  min-height: 100vh;
+}
+
+button,
+select {
+  font: inherit;
+}
+
+.shell {
+  width: min(1560px, 100%);
+  margin: 0 auto;
+  padding: 24px;
+}
+
+.topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  margin-bottom: 18px;
+}
+
+.eyebrow {
+  margin: 0 0 4px;
+  text-transform: uppercase;
+  color: #6b7280;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0;
+}
+
+h1,
+h2 {
+  margin: 0;
+  letter-spacing: 0;
+}
+
+h1 {
+  font-size: 30px;
+  line-height: 1.15;
+}
+
+h2 {
+  font-size: 16px;
+}
+
+.toolbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.selectWrap,
+.iconButton,
+.commandButton {
+  min-height: 40px;
+  border: 1px solid #d6dae1;
+  background: #ffffff;
+  color: #111827;
+  border-radius: 8px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.selectWrap {
+  padding: 0 10px;
+}
+
+.selectWrap select {
+  border: 0;
+  background: transparent;
+  outline: 0;
+  min-width: 92px;
+}
+
+.iconButton,
+.commandButton {
+  cursor: pointer;
+}
+
+.iconButton {
+  width: 40px;
+  justify-content: center;
+}
+
+.commandButton {
+  padding: 0 14px;
+  font-weight: 700;
+}
+
+.commandButton:hover,
+.iconButton:hover,
+.selectWrap:hover {
+  border-color: #9ca3af;
+}
+
+.commandButton:disabled,
+.iconButton:disabled {
+  cursor: wait;
+  color: #9ca3af;
+}
+
+.spin {
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.alert {
+  border: 1px solid #fecaca;
+  background: #fff1f2;
+  color: #991b1b;
+  border-radius: 8px;
+  padding: 12px 14px;
+  margin-bottom: 16px;
+  overflow-wrap: anywhere;
+}
+
+.metricsGrid {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(160px, 1fr));
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.metric,
+.panel {
+  background: #ffffff;
+  border: 1px solid #e2e5ea;
+  border-radius: 8px;
+  box-shadow: 0 1px 2px rgba(17, 24, 39, 0.05);
+}
+
+.metric {
+  min-height: 84px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px;
+}
+
+.metricIcon {
+  width: 34px;
+  height: 34px;
+  display: grid;
+  place-items: center;
+  border-radius: 8px;
+  background: #f3f4f6;
+  color: #374151;
+}
+
+.metric span,
+.smallMetric span {
+  display: block;
+  color: #6b7280;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.metric strong {
+  display: block;
+  margin-top: 3px;
+  font-size: 22px;
+  line-height: 1.1;
+}
+
+.metric.positive strong,
+.green {
+  color: #047857;
+}
+
+.metric.negative strong,
+.red {
+  color: #b91c1c;
+}
+
+.workspace {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) minmax(280px, 1fr) minmax(280px, 1fr);
+  gap: 14px;
+  align-items: stretch;
+}
+
+.workspace.lower {
+  grid-template-columns: minmax(0, 1.6fr) minmax(320px, 1fr) minmax(280px, 0.85fr);
+  margin-top: 14px;
+}
+
+.panel {
+  min-width: 0;
+  padding: 14px;
+}
+
+.panelHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.panelHeader span {
+  color: #4b5563;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.chartBox {
+  height: 250px;
+  min-height: 250px;
+}
+
+.chartBox.tall {
+  height: 374px;
+  min-height: 374px;
+}
+
+.metricStrip {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.smallMetric {
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  padding: 10px;
+  min-width: 0;
+}
+
+.smallMetric strong {
+  display: block;
+  margin-top: 4px;
+}
+
+.tableWrap {
+  overflow: auto;
+  max-height: 326px;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+th,
+td {
+  padding: 10px 8px;
+  border-bottom: 1px solid #edf0f3;
+  text-align: left;
+  white-space: nowrap;
+}
+
+th {
+  color: #6b7280;
+  font-size: 12px;
+}
+
+tbody tr {
+  cursor: pointer;
+}
+
+tbody tr:hover,
+.activeRow {
+  background: #f3f7f5;
+}
+
+.pill {
+  display: inline-flex;
+  justify-content: center;
+  min-width: 54px;
+  padding: 4px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.pill.buy {
+  background: #dcfce7;
+  color: #166534;
+}
+
+.pill.sell {
+  background: #fee2e2;
+  color: #991b1b;
+}
+
+.pill.hold {
+  background: #e5e7eb;
+  color: #374151;
+}
+
+.recharts-wrapper {
+  font-size: 12px;
+}
+
+@media (max-width: 1180px) {
+  .metricsGrid {
+    grid-template-columns: repeat(3, minmax(150px, 1fr));
+  }
+
+  .workspace,
+  .workspace.lower {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 720px) {
+  .shell {
+    padding: 14px;
+  }
+
+  .topbar {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .toolbar {
+    width: 100%;
+  }
+
+  .selectWrap {
+    flex: 1 1 150px;
+  }
+
+  .commandButton {
+    flex: 1 1 96px;
+    justify-content: center;
+  }
+
+  .metricsGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .metricStrip {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  h1 {
+    font-size: 26px;
+  }
+}
+

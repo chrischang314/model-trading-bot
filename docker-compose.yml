@@ -1,0 +1,52 @@
+services:
+  kdb:
+    image: ${KDB_IMAGE:-model-trading-bot-kdb:local}
+    build:
+      context: ./kdb
+      args:
+        KDB_BASE_IMAGE: ${KDB_BASE_IMAGE:-kdb-insights-core:latest}
+    environment:
+      KDB_DATA_DIR: /data/kdb
+      QLIC: /tmp/qlic
+    volumes:
+      - ./data/kdb:/data/kdb
+      - ${QLIC:-./qlic}:/tmp/qlic:ro
+    ports:
+      - "5000:5000"
+    healthcheck:
+      test: ["CMD-SHELL", "command -v q >/dev/null 2>&1 || test -x /opt/kx/kdb/l64/q"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    image: ${BACKEND_IMAGE:-model-trading-bot-backend:local}
+    build:
+      context: ./backend
+    environment:
+      DEFAULT_SYMBOLS: ${DEFAULT_SYMBOLS:-AAPL,AMZN,META,NFLX,GOOGL}
+      DATA_PROVIDER: ${DATA_PROVIDER:-yfinance}
+      STORAGE_BACKEND: ${STORAGE_BACKEND:-kdb}
+      KDB_HOST: ${KDB_HOST:-kdb}
+      KDB_PORT: ${KDB_PORT:-5000}
+      LOCAL_DATA_DIR: /app/data
+      BOOTSTRAP_ON_STARTUP: ${BOOTSTRAP_ON_STARTUP:-true}
+      AUTO_INGEST_ON_EMPTY: ${AUTO_INGEST_ON_EMPTY:-true}
+    volumes:
+      - ./data/backend:/app/data
+    ports:
+      - "8000:8000"
+    depends_on:
+      - kdb
+
+  frontend:
+    image: ${FRONTEND_IMAGE:-model-trading-bot-frontend:local}
+    build:
+      context: ./frontend
+      args:
+        VITE_API_BASE_URL: /api
+    ports:
+      - "8080:80"
+    depends_on:
+      - backend
+
