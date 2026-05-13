@@ -20,6 +20,11 @@ class IngestResponse(BaseModel):
     storage_backend: str
 
 
+class SymbolRequest(BaseModel):
+    symbols: list[str]
+    period: str = Field(default="2y", description="Provider period used when adding the symbol.")
+
+
 class BacktestRequest(BaseModel):
     symbol: str
     start: date | None = None
@@ -36,4 +41,3 @@ class PaperRequest(BaseModel):
 
 class ApiEnvelope(BaseModel):
     data: Any
-

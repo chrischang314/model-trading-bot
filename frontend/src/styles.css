@@ -67,6 +67,29 @@ h2 {
   flex-wrap: wrap;
 }
 
+.tickerForm {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.tickerForm input {
+  width: 104px;
+  min-height: 40px;
+  border: 1px solid #d6dae1;
+  background: #ffffff;
+  color: #111827;
+  border-radius: 8px;
+  padding: 0 10px;
+  outline: 0;
+  font-weight: 700;
+}
+
+.tickerForm input:focus {
+  border-color: #0f766e;
+  box-shadow: 0 0 0 3px rgba(15, 118, 110, 0.12);
+}
+
 .selectWrap,
 .iconButton,
 .commandButton {
@@ -140,7 +163,7 @@ h2 {
 
 .metricsGrid {
   display: grid;
-  grid-template-columns: repeat(5, minmax(160px, 1fr));
+  grid-template-columns: repeat(6, minmax(150px, 1fr));
   gap: 12px;
   margin-bottom: 14px;
 }
@@ -232,9 +255,77 @@ h2 {
   min-height: 250px;
 }
 
+.chartBox.compact {
+  height: 196px;
+  min-height: 196px;
+}
+
 .chartBox.tall {
   height: 374px;
   min-height: 374px;
+}
+
+.analysisGrid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.35fr) minmax(360px, 1fr);
+  gap: 14px;
+  margin-top: 14px;
+}
+
+.scoreRows {
+  display: grid;
+  gap: 12px;
+}
+
+.scoreRow {
+  min-width: 0;
+}
+
+.scoreLabel {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: 13px;
+}
+
+.scoreLabel span {
+  color: #374151;
+  font-weight: 800;
+}
+
+.scoreTrack {
+  position: relative;
+  height: 9px;
+  margin: 7px 0 5px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, #fee2e2 0%, #e5e7eb 50%, #dcfce7 100%);
+  overflow: hidden;
+}
+
+.scoreTrack span {
+  display: block;
+  height: 100%;
+  border-right: 3px solid #111827;
+}
+
+.scoreRow small {
+  display: block;
+  color: #6b7280;
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.reasonLine {
+  margin-top: 14px;
+  padding: 12px;
+  border: 1px solid #dbe4e0;
+  border-radius: 8px;
+  background: #f7faf8;
+  color: #1f2937;
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1.4;
 }
 
 .metricStrip {
@@ -242,6 +333,10 @@ h2 {
   grid-template-columns: repeat(4, 1fr);
   gap: 8px;
   margin-top: 12px;
+}
+
+.metricStrip.slim {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
 }
 
 .smallMetric {
@@ -324,7 +419,8 @@ tbody tr:hover,
   }
 
   .workspace,
-  .workspace.lower {
+  .workspace.lower,
+  .analysisGrid {
     grid-template-columns: 1fr;
   }
 }
@@ -341,6 +437,15 @@ tbody tr:hover,
 
   .toolbar {
     width: 100%;
+  }
+
+  .tickerForm {
+    flex: 1 1 160px;
+  }
+
+  .tickerForm input {
+    flex: 1;
+    min-width: 0;
   }
 
   .selectWrap {
@@ -364,4 +469,3 @@ tbody tr:hover,
     font-size: 26px;
   }
 }
-

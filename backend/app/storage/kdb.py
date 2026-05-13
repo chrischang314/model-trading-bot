@@ -39,6 +39,11 @@ class KdbStorage:
     ) -> pd.DataFrame:
         return self._query_table("signals", SIGNAL_COLUMNS, symbols, start, end)
 
+    def list_symbols(self) -> list[str]:
+        with self._connection() as q:
+            result = q("asc distinct (exec sym from bars),(exec sym from signals)").py()
+        return [str(symbol).upper() for symbol in result]
+
     def health(self) -> dict:
         with self._connection() as q:
             rows = q("(count bars;count signals)").py()
@@ -78,6 +83,9 @@ class KdbStorage:
         if result.empty:
             return pd.DataFrame(columns=columns)
         result["date"] = pd.to_datetime(result["date"])
+        for column in columns:
+            if column not in result.columns:
+                result[column] = pd.NA
         return result[columns].sort_values(["sym", "date"]).reset_index(drop=True)
 
     def _safe_symbol(self, symbol: str) -> str:

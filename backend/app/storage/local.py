@@ -32,6 +32,14 @@ class LocalCsvStorage:
     ) -> pd.DataFrame:
         return self._read_filtered(self.signals_path, SIGNAL_COLUMNS, symbols, start, end)
 
+    def list_symbols(self) -> list[str]:
+        symbols = set()
+        for path in (self.bars_path, self.signals_path):
+            if path.exists():
+                frame = pd.read_csv(path, usecols=["sym"])
+                symbols.update(frame["sym"].dropna().astype(str).str.upper().unique())
+        return sorted(symbols)
+
     def health(self) -> dict:
         return {"backend": "local", "path": str(self.root), "ok": True}
 
@@ -58,11 +66,13 @@ class LocalCsvStorage:
         if not path.exists():
             return pd.DataFrame(columns=columns)
         frame = pd.read_csv(path, parse_dates=["date"])
+        for column in columns:
+            if column not in frame.columns:
+                frame[column] = pd.NA
         if symbols:
             frame = frame[frame["sym"].isin(symbols)]
         if start:
             frame = frame[frame["date"] >= pd.Timestamp(start)]
         if end:
             frame = frame[frame["date"] <= pd.Timestamp(end)]
-        return frame.sort_values(["sym", "date"]).reset_index(drop=True)
-
+        return frame[columns].sort_values(["sym", "date"]).reset_index(drop=True)

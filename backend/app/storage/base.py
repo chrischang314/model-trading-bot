@@ -21,6 +21,8 @@ class MarketDataStorage(Protocol):
     ) -> pd.DataFrame:
         ...
 
-    def health(self) -> dict:
+    def list_symbols(self) -> list[str]:
         ...
 
+    def health(self) -> dict:
+        ...

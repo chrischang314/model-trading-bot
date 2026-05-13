@@ -1,4 +1,4 @@
-import type { BacktestResult, OverviewRow, PaperSnapshot, SignalPoint } from "./types";
+import type { BacktestResult, OverviewRow, PaperSnapshot, SignalPoint, StrategyInfo } from "./types";
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL ?? "/api";
 
@@ -31,6 +31,18 @@ export async function ingest(symbols: string[]): Promise<void> {
   });
 }
 
+export async function addSymbols(symbols: string[]): Promise<void> {
+  await request("/symbols", {
+    method: "POST",
+    body: JSON.stringify({ symbols, period: "2y" })
+  });
+}
+
+export async function fetchStrategy(): Promise<StrategyInfo> {
+  const envelope = await request<{ data: StrategyInfo }>("/strategy");
+  return envelope.data;
+}
+
 export async function runBacktest(symbol: string): Promise<BacktestResult> {
   const envelope = await request<{ data: BacktestResult }>("/backtests", {
     method: "POST",
@@ -46,4 +58,3 @@ export async function runPaper(symbols: string[]): Promise<PaperSnapshot> {
   });
   return envelope.data;
 }
-

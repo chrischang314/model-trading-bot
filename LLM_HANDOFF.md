@@ -71,7 +71,10 @@ Main API routes:
 
 - `GET /health`
 - `GET /api/symbols`
+- `POST /api/symbols`
 - `POST /api/ingest`
+- `GET /api/strategy`
+- `GET /api/explain/{symbol}`
 - `GET /api/overview`
 - `GET /api/timeseries/{symbol}`
 - `POST /api/backtests`
@@ -83,9 +86,14 @@ Default symbols:
 
 Default strategy logic:
 
-- Long when MACD > MACD signal, RSI 14 < 70, and close > SMA 20.
+- Trend score: close vs SMA 50, SMA 20 vs SMA 50, MACD histogram.
+- Momentum score: RSI 14, stochastic %K/%D, 20-day price momentum.
+- Volatility score: Bollinger Bands and ATR percentage vs recent baseline.
+- Volume score: 20-day volume z-score and OBV direction.
+- Long when `signal_score >= 4`, close is above SMA 20, and RSI 14 is below 78.
 - Cash otherwise.
 - Position is shifted one bar in the backtest to reduce lookahead bias.
+- `signal_reason` stores a compact text explanation for the latest component scores.
 
 ## KDB Details
 
@@ -98,7 +106,7 @@ Files:
 Tables:
 
 - `bars`: `date`, `sym`, `open`, `high`, `low`, `close`, `adj_close`, `volume`, `source`
-- `signals`: `date`, `sym`, `close`, `sma_20`, `sma_50`, `rsi_14`, `macd`, `macd_signal`, `macd_hist`, `trade_signal`, `position`
+- `signals`: daily close plus EMA, SMA, RSI, MACD, Bollinger Bands, ATR, stochastic, OBV, volume z-score, 20-day momentum, 52-week-high distance, component scores, `signal_score`, `signal_reason`, `trade_signal`, `position`
 
 q functions called by the backend:
 
@@ -133,10 +141,13 @@ Stack:
 Dashboard capabilities:
 
 - Symbol selection
+- Add ticker flow that calls `POST /api/symbols`
 - Data refresh trigger
-- Price with SMA 20/SMA 50 and position overlay
+- Price with SMA 20/SMA 50, Bollinger Bands, and position overlay
 - MACD chart
 - RSI chart
+- Stochastic chart
+- Algorithm score transparency panel
 - Backtest equity vs benchmark
 - Signal table
 - Paper orders/equity snapshot

@@ -7,11 +7,11 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import settings
-from app.models import ApiEnvelope, BacktestRequest, IngestRequest, IngestResponse, PaperRequest
+from app.models import ApiEnvelope, BacktestRequest, IngestRequest, IngestResponse, PaperRequest, SymbolRequest
 from app.services.backtest import run_long_cash_backtest
 from app.services.data_provider import create_provider
 from app.services.paper import run_paper_snapshot
-from app.services.signals import calculate_signals
+from app.services.signals import STRATEGY_METADATA, calculate_signals
 from app.storage import create_storage
 from app.utils import clean_records, normalize_symbols
 
@@ -50,7 +50,41 @@ def health() -> dict:
 
 @app.get("/api/symbols", response_model=ApiEnvelope)
 def symbols() -> ApiEnvelope:
-    return ApiEnvelope(data=list(settings.default_symbols))
+    return ApiEnvelope(data=_available_symbols())
+
+
+@app.post("/api/symbols", response_model=IngestResponse)
+def add_symbols(request: SymbolRequest) -> IngestResponse:
+    try:
+        return run_ingestion(IngestRequest(symbols=request.symbols, period=request.period))
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+
+@app.get("/api/strategy", response_model=ApiEnvelope)
+def strategy() -> ApiEnvelope:
+    return ApiEnvelope(data=STRATEGY_METADATA)
+
+
+@app.get("/api/explain/{symbol}", response_model=ApiEnvelope)
+def explain(symbol: str) -> ApiEnvelope:
+    clean_symbol = normalize_symbols([symbol])[0]
+    signals = storage.get_signals(symbols=[clean_symbol])
+    if signals.empty and settings.auto_ingest_on_empty:
+        run_ingestion(IngestRequest(symbols=[clean_symbol], period="2y"))
+        signals = storage.get_signals(symbols=[clean_symbol])
+    if signals.empty:
+        raise HTTPException(status_code=404, detail=f"No signals available for {clean_symbol}")
+    latest = clean_records(signals.sort_values("date").tail(1))[0]
+    components = []
+    for component in STRATEGY_METADATA["components"]:
+        components.append(
+            {
+                **component,
+                "value": latest.get(component["key"]),
+            }
+        )
+    return ApiEnvelope(data={"symbol": clean_symbol, "latest": latest, "components": components, "strategy": STRATEGY_METADATA})
 
 
 @app.post("/api/ingest", response_model=IngestResponse)
@@ -63,7 +97,7 @@ def ingest(request: IngestRequest) -> IngestResponse:
 
 @app.get("/api/overview", response_model=ApiEnvelope)
 def overview() -> ApiEnvelope:
-    symbols = list(settings.default_symbols)
+    symbols = _available_symbols()
     signals = _signals_or_bootstrap(symbols)
     bars = storage.get_bars(symbols=symbols)
     if signals.empty or bars.empty:
@@ -147,3 +181,11 @@ def _signals_or_bootstrap(symbols: list[str]) -> pd.DataFrame:
         signals = storage.get_signals(symbols=symbols)
     return signals
 
+
+def _available_symbols() -> list[str]:
+    stored_symbols = []
+    try:
+        stored_symbols = storage.list_symbols()
+    except Exception:
+        stored_symbols = []
+    return normalize_symbols([*settings.default_symbols, *stored_symbols])

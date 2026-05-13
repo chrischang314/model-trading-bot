@@ -88,7 +88,11 @@ pnpm run dev -- --host 127.0.0.1 --port 5173
 
 The dashboard calls:
 
+- `GET /api/symbols` to list default and stored symbols.
+- `POST /api/symbols` to add and ingest new tickers.
 - `POST /api/ingest` to fetch bars, write bars/signals, and refresh the store.
+- `GET /api/strategy` for algorithm metadata and score components.
+- `GET /api/explain/{symbol}` for the latest component-level explanation.
 - `GET /api/overview` for latest cross-symbol state.
 - `GET /api/timeseries/{symbol}` for chart data.
 - `POST /api/backtests` for a simple long/cash MACD/RSI strategy.
@@ -98,10 +102,13 @@ Default symbols are `AAPL,AMZN,META,NFLX,GOOGL`.
 
 ## Strategy
 
-The toy strategy is intentionally simple:
+The toy strategy is intentionally simple but now uses a transparent scorecard:
 
-- Calculate SMA 20, SMA 50, RSI 14, MACD 12/26/9.
-- Long when MACD is above its signal line, RSI is below 70, and price is above SMA 20.
+- Trend: close vs SMA 50, SMA 20 vs SMA 50, MACD histogram.
+- Momentum: RSI 14, stochastic %K/%D, 20-day price momentum.
+- Volatility: Bollinger Bands, ATR percentage vs recent baseline.
+- Volume: volume z-score and OBV direction.
+- Long when score is at least 4, close is above SMA 20, and RSI is below 78.
 - Cash otherwise.
 - Backtest uses next-day position application, a fee/slippage haircut, benchmark comparison, Sharpe, max drawdown, and trade list.
 
