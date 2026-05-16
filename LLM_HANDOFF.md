@@ -45,7 +45,7 @@ flowchart LR
   API --> Storage{"Storage adapter"}
   Storage --> KDB["q/kdb+ bars + signals"]
   Storage --> Local["CSV fallback for dev/tests"]
-  API --> Signals["SMA, RSI, MACD"]
+  API --> Signals["Trend, momentum,\nvolatility, volume signals"]
   API --> Backtest["long/cash backtest"]
   API --> Paper["paper snapshot"]
   API --> UI["React dashboard"]
@@ -61,7 +61,7 @@ Key modules:
 
 - `backend/app/config.py`: environment-driven settings.
 - `backend/app/services/data_provider.py`: `YFinanceProvider`, `StooqProvider`, `FallbackProvider`.
-- `backend/app/services/signals.py`: SMA 20, SMA 50, RSI 14, MACD 12/26/9, toy trade signal.
+- `backend/app/services/signals.py`: trend, momentum, volatility, and volume indicators plus a transparent scorecard.
 - `backend/app/services/backtest.py`: long/cash backtest with fee/slippage, equity curve, drawdown, Sharpe, trades.
 - `backend/app/services/paper.py`: one-step paper portfolio allocation from latest signals.
 - `backend/app/storage/local.py`: CSV storage adapter for local/dev/test use.
@@ -74,23 +74,33 @@ Main API routes:
 - `POST /api/symbols`
 - `POST /api/ingest`
 - `GET /api/strategy`
+- `GET /api/signals/catalog`
+- `GET /api/signals/latest`
 - `GET /api/explain/{symbol}`
+- `GET /api/universe/sp500`
+- `POST /api/universe/sp500/refresh`
 - `GET /api/overview`
 - `GET /api/timeseries/{symbol}`
 - `POST /api/backtests`
 - `POST /api/paper/run`
 
-Default symbols:
+Default watched symbols:
 
 - `AAPL, AMZN, META, NFLX, GOOGL`
 
+S&P 500 universe:
+
+- `backend/app/services/universe.py` scrapes the current S&P 500 constituent table from Wikipedia and caches it under `LOCAL_DATA_DIR/universe/sp500.json`.
+- The cache refresh cadence is controlled by `SP500_REFRESH_HOURS`; startup refresh is controlled by `UNIVERSE_REFRESH_ON_STARTUP`.
+- The app uses this as a ticker discovery/autocomplete universe, but still fetches price history only for watched symbols to avoid punishing free data providers.
+
 Default strategy logic:
 
-- Trend score: close vs SMA 50, SMA 20 vs SMA 50, MACD histogram.
-- Momentum score: RSI 14, stochastic %K/%D, 20-day price momentum.
-- Volatility score: Bollinger Bands and ATR percentage vs recent baseline.
-- Volume score: 20-day volume z-score and OBV direction.
-- Long when `signal_score >= 4`, close is above SMA 20, and RSI 14 is below 78.
+- Trend score: SMA/EMA alignment, close vs SMA 200, MACD histogram, ADX/+DI/-DI, Donchian breakouts.
+- Momentum score: RSI 14, stochastic %K/%D, Williams %R, CCI, 20-day momentum, 12-1 month momentum.
+- Volatility score: Bollinger Bands, Keltner Channels, ATR percentage, realized volatility.
+- Volume score: 20-day volume z-score, OBV direction, rolling VWAP.
+- Long when `signal_score >= 5`, close is above SMA 20, and RSI 14 is below 78.
 - Cash otherwise.
 - Position is shifted one bar in the backtest to reduce lookahead bias.
 - `signal_reason` stores a compact text explanation for the latest component scores.
@@ -106,7 +116,7 @@ Files:
 Tables:
 
 - `bars`: `date`, `sym`, `open`, `high`, `low`, `close`, `adj_close`, `volume`, `source`
-- `signals`: daily close plus EMA, SMA, RSI, MACD, Bollinger Bands, ATR, stochastic, OBV, volume z-score, 20-day momentum, 52-week-high distance, component scores, `signal_score`, `signal_reason`, `trade_signal`, `position`
+- `signals`: daily close plus returns, EMA, SMA, RSI, MACD, Bollinger Bands, ATR, realized volatility, stochastic, Williams %R, CCI, ADX/+DI/-DI, OBV, volume z-score, rolling VWAP, 20-day momentum, 12-1 month momentum, z-score, Donchian, Keltner, gap/intraday returns, 52-week-high distance, component scores, `signal_score`, `signal_reason`, `trade_signal`, `position`
 
 q functions called by the backend:
 
@@ -142,12 +152,15 @@ Dashboard capabilities:
 
 - Symbol selection
 - Add ticker flow that calls `POST /api/symbols`
+- S&P 500 universe sync/autocomplete
 - Data refresh trigger
-- Price with SMA 20/SMA 50, Bollinger Bands, and position overlay
+- Four pages: Home, Stock, Signals, Backtesting
+- Price with SMA 20/SMA 50/SMA 200, Bollinger/Keltner bands, and position overlay
 - MACD chart
 - RSI chart
 - Stochastic chart
 - Algorithm score transparency panel
+- Signal catalog and latest full signal matrix
 - Backtest equity vs benchmark
 - Signal table
 - Paper orders/equity snapshot
@@ -241,6 +254,7 @@ Backend smoke test:
 - Stored 123 bars/signals.
 - Ran the long/cash backtest.
 - Example result at the time: `total_return` around `0.1347`, `trades` 8 for a 6-month AAPL smoke run.
+- S&P 500 universe refresh returned 503 current listings on 2026-05-16.
 
 Frontend build:
 
@@ -292,6 +306,17 @@ KDB verification:
 7. Security is intentionally light.
    - No auth is implemented.
    - Do not expose this publicly without auth, rate limiting, secret management, image scanning, and network policy.
+
+## Research Context
+
+The current signal set is a pragmatic educational blend, not a claim of production alpha. Useful references behind the implemented families:
+
+- Brock, Lakonishok & LeBaron (1992): moving-average and trading-range technical rules. https://ideas.repec.org/a/bla/jfinan/v47y1992i5p1731-64.html
+- Lo, Mamaysky & Wang (2000): computational/statistical framing for technical analysis. https://web.mit.edu/wangj/www/pap/LoMamayskyWang00.pdf
+- Jegadeesh & Titman (1993): 3- to 12-month cross-sectional momentum. https://doi.org/10.1111/j.1540-6261.1993.tb04702.x
+- Moskowitz, Ooi & Pedersen (2012): time-series momentum/trend. https://www.aqr.com/insights/research/journal-article/time-series-momentum
+- Hurst, Ooi & Pedersen (2017): long-run trend-following evidence. https://www.aqr.com/insights/research/journal-article/a-century-of-evidence-on-trend-following-investing
+- Han, Yang & Zhou (2013): cross-sectional profitability of moving-average technical analysis. https://www.cambridge.org/core/product/identifier/S0022109013000586/type/journal_article
 
 ## Recommended Next LLM Task
 

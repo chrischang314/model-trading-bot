@@ -1,4 +1,12 @@
-import type { BacktestResult, OverviewRow, PaperSnapshot, SignalPoint, StrategyInfo } from "./types";
+import type {
+  BacktestResult,
+  OverviewRow,
+  PaperSnapshot,
+  SignalCatalogItem,
+  SignalPoint,
+  StrategyInfo,
+  UniverseResponse
+} from "./types";
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL ?? "/api";
 
@@ -40,6 +48,26 @@ export async function addSymbols(symbols: string[]): Promise<void> {
 
 export async function fetchStrategy(): Promise<StrategyInfo> {
   const envelope = await request<{ data: StrategyInfo }>("/strategy");
+  return envelope.data;
+}
+
+export async function fetchSignalCatalog(): Promise<SignalCatalogItem[]> {
+  const envelope = await request<{ data: SignalCatalogItem[] }>("/signals/catalog");
+  return envelope.data;
+}
+
+export async function fetchLatestSignals(): Promise<OverviewRow[]> {
+  const envelope = await request<{ data: OverviewRow[] }>("/signals/latest");
+  return envelope.data;
+}
+
+export async function fetchSp500Universe(refresh = false): Promise<UniverseResponse> {
+  const envelope = await request<{ data: UniverseResponse }>(`/universe/sp500${refresh ? "?refresh=true" : ""}`);
+  return envelope.data;
+}
+
+export async function refreshSp500Universe(): Promise<UniverseResponse> {
+  const envelope = await request<{ data: UniverseResponse }>("/universe/sp500/refresh", { method: "POST" });
   return envelope.data;
 }
 

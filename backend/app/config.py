@@ -30,7 +30,8 @@ class Settings:
     local_data_dir: Path = Path(os.getenv("LOCAL_DATA_DIR", "data")).resolve()
     bootstrap_on_startup: bool = _bool_env("BOOTSTRAP_ON_STARTUP", False)
     auto_ingest_on_empty: bool = _bool_env("AUTO_INGEST_ON_EMPTY", True)
+    sp500_refresh_hours: int = int(os.getenv("SP500_REFRESH_HOURS", "24"))
+    universe_refresh_on_startup: bool = _bool_env("UNIVERSE_REFRESH_ON_STARTUP", True)
 
 
 settings = Settings()
-

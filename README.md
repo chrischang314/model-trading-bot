@@ -2,10 +2,10 @@
 
 A toy algorithmic trading system for learning the shape of a modern market-data stack:
 
-- Free daily equity data for a small FAANG-style basket.
+- Free daily equity data for a watched basket, with a cached S&P 500 ticker universe for discovery.
 - q/kdb+ storage service for time-series market data and calculated signals.
 - FastAPI orchestration layer for ingestion, indicators, backtesting, and paper trading.
-- React dashboard for prices, MACD, RSI, positions, and backtest metrics.
+- React dashboard split into Home, Stock, Signals, and Backtesting pages.
 - Docker Compose and Kubernetes manifests for deployment practice.
 
 This is educational software, not investment advice and not a production trading system.
@@ -90,27 +90,31 @@ The dashboard calls:
 
 - `GET /api/symbols` to list default and stored symbols.
 - `POST /api/symbols` to add and ingest new tickers.
+- `GET /api/universe/sp500` and `POST /api/universe/sp500/refresh` to view or re-poll S&P 500 constituents.
 - `POST /api/ingest` to fetch bars, write bars/signals, and refresh the store.
 - `GET /api/strategy` for algorithm metadata and score components.
+- `GET /api/signals/catalog` and `GET /api/signals/latest` for signal descriptions and the latest full signal matrix.
 - `GET /api/explain/{symbol}` for the latest component-level explanation.
 - `GET /api/overview` for latest cross-symbol state.
 - `GET /api/timeseries/{symbol}` for chart data.
-- `POST /api/backtests` for a simple long/cash MACD/RSI strategy.
+- `POST /api/backtests` for the long/cash scorecard strategy.
 - `POST /api/paper/run` for a one-step paper account snapshot.
 
-Default symbols are `AAPL,AMZN,META,NFLX,GOOGL`.
+Default watched symbols are `AAPL,AMZN,META,NFLX,GOOGL`. The S&P 500 universe is cached separately and periodically refreshed with `SP500_REFRESH_HOURS` so ticker discovery does not require fetching price history for all 500+ listings on every page load.
 
 ## Strategy
 
 The toy strategy is intentionally simple but now uses a transparent scorecard:
 
-- Trend: close vs SMA 50, SMA 20 vs SMA 50, MACD histogram.
-- Momentum: RSI 14, stochastic %K/%D, 20-day price momentum.
-- Volatility: Bollinger Bands, ATR percentage vs recent baseline.
-- Volume: volume z-score and OBV direction.
-- Long when score is at least 4, close is above SMA 20, and RSI is below 78.
+- Trend: SMA/EMA alignment, SMA 200, MACD histogram, ADX/+DI/-DI, and Donchian breakouts.
+- Momentum: RSI 14, stochastic %K/%D, Williams %R, CCI, 20-day momentum, and 12-1 month momentum.
+- Volatility: Bollinger Bands, Keltner Channels, ATR percentage, and realized volatility.
+- Volume: volume z-score, OBV direction, and rolling VWAP.
+- Long when score is at least 5, close is above SMA 20, and RSI is below 78.
 - Cash otherwise.
 - Backtest uses next-day position application, a fee/slippage haircut, benchmark comparison, Sharpe, max drawdown, and trade list.
+
+The signal set is influenced by classic technical-analysis and momentum literature, including [Brock, Lakonishok & LeBaron](https://ideas.repec.org/a/bla/jfinan/v47y1992i5p1731-64.html) on moving-average and trading-range rules, [Lo, Mamaysky & Wang](https://web.mit.edu/wangj/www/pap/LoMamayskyWang00.pdf) on statistical technical-analysis foundations, [Jegadeesh & Titman](https://doi.org/10.1111/j.1540-6261.1993.tb04702.x) on cross-sectional momentum, [Moskowitz, Ooi & Pedersen](https://www.aqr.com/insights/research/journal-article/time-series-momentum) on time-series momentum, [Hurst, Ooi & Pedersen](https://www.aqr.com/insights/research/journal-article/a-century-of-evidence-on-trend-following-investing) on long-run trend following, and [Han, Yang & Zhou](https://www.cambridge.org/core/product/identifier/S0022109013000586/type/journal_article) on cross-sectional profitability of moving-average technical analysis.
 
 ## Kubernetes
 

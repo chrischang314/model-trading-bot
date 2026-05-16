@@ -18,7 +18,8 @@ body {
 }
 
 button,
-select {
+select,
+input {
   font: inherit;
 }
 
@@ -129,6 +130,10 @@ h2 {
   font-weight: 700;
 }
 
+.commandButton.compact {
+  padding: 0 12px;
+}
+
 .commandButton:hover,
 .iconButton:hover,
 .selectWrap:hover {
@@ -159,6 +164,43 @@ h2 {
   padding: 12px 14px;
   margin-bottom: 16px;
   overflow-wrap: anywhere;
+}
+
+.statusLine {
+  border: 1px solid #bfdbfe;
+  background: #eff6ff;
+  color: #1e3a8a;
+  border-radius: 8px;
+  padding: 10px 12px;
+  margin-bottom: 14px;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.pageTabs {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: -6px 0 16px;
+  overflow-x: auto;
+}
+
+.pageTabs button {
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  color: #4b5563;
+  min-height: 36px;
+  padding: 0 12px;
+  cursor: pointer;
+  font-weight: 800;
+}
+
+.pageTabs button:hover,
+.pageTabs .activeTab {
+  border-color: #d6dae1;
+  background: #ffffff;
+  color: #111827;
 }
 
 .metricsGrid {
@@ -231,6 +273,12 @@ h2 {
   margin-top: 14px;
 }
 
+.homeGrid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(420px, 1fr) minmax(320px, 0.85fr);
+  gap: 14px;
+}
+
 .panel {
   min-width: 0;
   padding: 14px;
@@ -270,6 +318,84 @@ h2 {
   grid-template-columns: minmax(0, 1.35fr) minmax(360px, 1fr);
   gap: 14px;
   margin-top: 14px;
+}
+
+.signalsLayout,
+.backtestLayout {
+  display: grid;
+  gap: 14px;
+}
+
+.backtestLayout {
+  grid-template-columns: minmax(0, 1.6fr) minmax(340px, 0.9fr);
+}
+
+.backtestHero {
+  grid-row: span 2;
+}
+
+.signalMatrixPanel {
+  min-height: 440px;
+}
+
+.matrixHeader {
+  align-items: center;
+}
+
+.searchBox {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid #d6dae1;
+  border-radius: 8px;
+  min-height: 38px;
+  padding: 0 10px;
+  background: #ffffff;
+}
+
+.searchBox input {
+  border: 0;
+  outline: 0;
+  min-width: min(260px, 40vw);
+}
+
+.catalogGrid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.catalogGroup {
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  padding: 12px;
+  min-width: 0;
+}
+
+.catalogGroup h3 {
+  margin: 0 0 10px;
+  font-size: 14px;
+}
+
+.catalogItem {
+  padding: 8px 0;
+  border-top: 1px solid #f1f3f5;
+}
+
+.catalogItem strong,
+.catalogItem span {
+  display: block;
+}
+
+.catalogItem strong {
+  font-size: 13px;
+}
+
+.catalogItem span {
+  color: #6b7280;
+  font-size: 12px;
+  line-height: 1.35;
+  margin-top: 3px;
 }
 
 .scoreRows {
@@ -356,6 +482,33 @@ h2 {
   max-height: 326px;
 }
 
+.tableWrap.wide {
+  max-height: 520px;
+}
+
+.reasonCell {
+  max-width: 520px;
+  white-space: normal;
+  line-height: 1.35;
+  min-width: 320px;
+}
+
+.universeSummary {
+  display: grid;
+  gap: 10px;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.universeSummary strong {
+  font-size: 18px;
+}
+
+.universeSummary p {
+  margin: 0;
+  color: #4b5563;
+}
+
 table {
   width: 100%;
   border-collapse: collapse;
@@ -420,8 +573,14 @@ tbody tr:hover,
 
   .workspace,
   .workspace.lower,
-  .analysisGrid {
+  .analysisGrid,
+  .homeGrid,
+  .backtestLayout {
     grid-template-columns: 1fr;
+  }
+
+  .catalogGrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 
@@ -463,6 +622,20 @@ tbody tr:hover,
 
   .metricStrip {
     grid-template-columns: repeat(2, 1fr);
+  }
+
+  .catalogGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .matrixHeader {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .searchBox,
+  .searchBox input {
+    width: 100%;
   }
 
   h1 {

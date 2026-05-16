@@ -1,11 +1,20 @@
+export type SignalValue = string | number | null;
+
 export type OverviewRow = {
+  [key: string]: SignalValue;
   date: string;
   sym: string;
   close: number;
+  return_1d: number | null;
+  return_5d: number | null;
+  return_21d: number | null;
+  return_63d: number | null;
   ema_12: number | null;
   ema_26: number | null;
+  ema_50: number | null;
   sma_20: number | null;
   sma_50: number | null;
+  sma_200: number | null;
   rsi_14: number | null;
   macd: number | null;
   macd_signal: number | null;
@@ -16,11 +25,29 @@ export type OverviewRow = {
   bb_width: number | null;
   atr_14: number | null;
   atr_pct: number | null;
+  realized_vol_20: number | null;
+  realized_vol_63: number | null;
   stoch_k: number | null;
   stoch_d: number | null;
+  williams_r_14: number | null;
+  cci_20: number | null;
+  adx_14: number | null;
+  plus_di_14: number | null;
+  minus_di_14: number | null;
   obv: number | null;
   volume_z: number | null;
+  rolling_vwap_20: number | null;
   momentum_20d: number | null;
+  momentum_252_skip_21: number | null;
+  zscore_20: number | null;
+  donchian_high_20: number | null;
+  donchian_low_20: number | null;
+  donchian_breakout: number | null;
+  keltner_mid: number | null;
+  keltner_upper: number | null;
+  keltner_lower: number | null;
+  gap_return: number | null;
+  intraday_return: number | null;
   distance_52w_high: number | null;
   trend_score: number | null;
   momentum_score: number | null;
@@ -36,13 +63,20 @@ export type OverviewRow = {
 };
 
 export type SignalPoint = {
+  [key: string]: SignalValue;
   date: string;
   sym: string;
   close: number;
+  return_1d: number | null;
+  return_5d: number | null;
+  return_21d: number | null;
+  return_63d: number | null;
   ema_12: number | null;
   ema_26: number | null;
+  ema_50: number | null;
   sma_20: number | null;
   sma_50: number | null;
+  sma_200: number | null;
   rsi_14: number | null;
   macd: number | null;
   macd_signal: number | null;
@@ -53,11 +87,29 @@ export type SignalPoint = {
   bb_width: number | null;
   atr_14: number | null;
   atr_pct: number | null;
+  realized_vol_20: number | null;
+  realized_vol_63: number | null;
   stoch_k: number | null;
   stoch_d: number | null;
+  williams_r_14: number | null;
+  cci_20: number | null;
+  adx_14: number | null;
+  plus_di_14: number | null;
+  minus_di_14: number | null;
   obv: number | null;
   volume_z: number | null;
+  rolling_vwap_20: number | null;
   momentum_20d: number | null;
+  momentum_252_skip_21: number | null;
+  zscore_20: number | null;
+  donchian_high_20: number | null;
+  donchian_low_20: number | null;
+  donchian_breakout: number | null;
+  keltner_mid: number | null;
+  keltner_upper: number | null;
+  keltner_lower: number | null;
+  gap_return: number | null;
+  intraday_return: number | null;
   distance_52w_high: number | null;
   trend_score: number | null;
   momentum_score: number | null;
@@ -106,4 +158,25 @@ export type StrategyInfo = {
     range: [number, number];
   }>;
   indicator_notes: string[];
+};
+
+export type SignalCatalogItem = {
+  key: string;
+  label: string;
+  group: string;
+  description: string;
+};
+
+export type UniverseMember = {
+  symbol: string;
+  name: string;
+  sector: string;
+  industry: string;
+};
+
+export type UniverseResponse = {
+  source: string;
+  as_of: string;
+  count: number;
+  members: UniverseMember[];
 };
