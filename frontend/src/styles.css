@@ -115,6 +115,10 @@ h2 {
   min-width: 92px;
 }
 
+.strategyWrap select {
+  min-width: 154px;
+}
+
 .iconButton,
 .commandButton {
   cursor: pointer;
@@ -382,20 +386,106 @@ h2 {
   border-top: 1px solid #f1f3f5;
 }
 
-.catalogItem strong,
-.catalogItem span {
-  display: block;
+.catalogItemButton {
+  width: 100%;
+  border: 0;
+  background: transparent;
+  padding: 0;
+  color: #111827;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  text-align: left;
 }
 
-.catalogItem strong {
+.catalogItemButton strong {
   font-size: 13px;
 }
 
-.catalogItem span {
+.catalogDetails {
+  margin-top: 7px;
+  display: grid;
+  gap: 5px;
+}
+
+.catalogDetails p,
+.catalogDetails span {
+  margin: 0;
   color: #6b7280;
   font-size: 12px;
   line-height: 1.35;
-  margin-top: 3px;
+}
+
+.catalogDetails span {
+  color: #374151;
+}
+
+.strategyPanel {
+  align-self: start;
+}
+
+.strategySummary {
+  display: grid;
+  gap: 8px;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.strategySummary strong,
+.strategySummary p {
+  margin: 0;
+}
+
+.strategySummary p {
+  color: #4b5563;
+}
+
+.customStrategyForm {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.customStrategyForm label {
+  min-width: 0;
+}
+
+.customStrategyForm label span {
+  display: block;
+  color: #6b7280;
+  font-size: 12px;
+  font-weight: 800;
+  margin-bottom: 5px;
+}
+
+.customStrategyForm input[type="text"],
+.customStrategyForm input[type="number"],
+.customStrategyForm input:not([type]) {
+  width: 100%;
+  min-height: 36px;
+  border: 1px solid #d6dae1;
+  border-radius: 8px;
+  padding: 0 9px;
+  outline: 0;
+}
+
+.customStrategyForm .checkRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.customStrategyForm .checkRow span {
+  margin: 0;
+  color: #111827;
+}
+
+.customStrategyForm .commandButton {
+  grid-column: 1 / -1;
+  justify-content: center;
 }
 
 .scoreRows {

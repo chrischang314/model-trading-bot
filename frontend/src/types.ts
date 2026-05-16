@@ -124,6 +124,7 @@ export type SignalPoint = {
 export type BacktestResult = {
   symbol: string;
   metrics: Record<string, number | null>;
+  strategy?: StrategyInfo;
   equity_curve: Array<{
     date: string;
     equity: number;
@@ -148,16 +149,32 @@ export type PaperSnapshot = {
   orders: Array<{ sym: string; side: string; notional: number; reason: string }>;
 };
 
-export type StrategyInfo = {
+export type CustomStrategyConfig = {
   name: string;
+  min_signal_score: number;
+  max_rsi: number;
+  min_rsi: number | null;
+  require_above_sma20: boolean;
+  require_positive_macd: boolean;
+  min_adx: number | null;
+  min_momentum_score: number | null;
+};
+
+export type StrategyInfo = {
+  id: string;
+  name: string;
+  label: string;
+  kind: "built_in" | "custom";
+  description: string;
   position_rule: string;
   components: Array<{
-    key: "trend_score" | "momentum_score" | "volatility_score" | "volume_score";
+    key: string;
     label: string;
     signals: string[];
     range: [number, number];
   }>;
   indicator_notes: string[];
+  custom?: CustomStrategyConfig;
 };
 
 export type SignalCatalogItem = {
@@ -165,6 +182,8 @@ export type SignalCatalogItem = {
   label: string;
   group: string;
   description: string;
+  formula?: string;
+  interpretation?: string;
 };
 
 export type UniverseMember = {

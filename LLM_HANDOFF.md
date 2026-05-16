@@ -62,6 +62,7 @@ Key modules:
 - `backend/app/config.py`: environment-driven settings.
 - `backend/app/services/data_provider.py`: `YFinanceProvider`, `StooqProvider`, `FallbackProvider`.
 - `backend/app/services/signals.py`: trend, momentum, volatility, and volume indicators plus a transparent scorecard.
+- `backend/app/services/strategies.py`: built-in strategy registry, custom scorecard normalization, and dynamic strategy application.
 - `backend/app/services/backtest.py`: long/cash backtest with fee/slippage, equity curve, drawdown, Sharpe, trades.
 - `backend/app/services/paper.py`: one-step paper portfolio allocation from latest signals.
 - `backend/app/storage/local.py`: CSV storage adapter for local/dev/test use.
@@ -73,6 +74,7 @@ Main API routes:
 - `GET /api/symbols`
 - `POST /api/symbols`
 - `POST /api/ingest`
+- `GET /api/strategies`
 - `GET /api/strategy`
 - `GET /api/signals/catalog`
 - `GET /api/signals/latest`
@@ -94,14 +96,14 @@ S&P 500 universe:
 - The cache refresh cadence is controlled by `SP500_REFRESH_HOURS`; startup refresh is controlled by `UNIVERSE_REFRESH_ON_STARTUP`.
 - The app uses this as a ticker discovery/autocomplete universe, but still fetches price history only for watched symbols to avoid punishing free data providers.
 
-Default strategy logic:
+Strategy layer:
 
-- Trend score: SMA/EMA alignment, close vs SMA 200, MACD histogram, ADX/+DI/-DI, Donchian breakouts.
-- Momentum score: RSI 14, stochastic %K/%D, Williams %R, CCI, 20-day momentum, 12-1 month momentum.
-- Volatility score: Bollinger Bands, Keltner Channels, ATR percentage, realized volatility.
-- Volume score: 20-day volume z-score, OBV direction, rolling VWAP.
-- Long when `signal_score >= 5`, close is above SMA 20, and RSI 14 is below 78.
-- Cash otherwise.
+- `backend/app/services/signals.py` calculates shared indicator columns and base component scores.
+- `backend/app/services/strategies.py` dynamically applies a selected strategy to those stored indicator columns.
+- Built-ins: `multi_factor_scorecard`, `trend_breakout`, `mean_reversion`, `momentum_rotation`, `low_volatility_trend`.
+- Custom: `custom_scorecard`, a validated rule template with score, RSI, SMA 20, MACD, ADX, and momentum filters.
+- GET endpoints accept `strategy_id` query params; custom GET usage also accepts `custom_name`, `min_signal_score`, `max_rsi`, `min_rsi`, `require_above_sma20`, `require_positive_macd`, `min_adx`, and `min_momentum_score`.
+- `POST /api/backtests` and `POST /api/paper/run` accept `strategy_id` and `custom_strategy` in the request body.
 - Position is shifted one bar in the backtest to reduce lookahead bias.
 - `signal_reason` stores a compact text explanation for the latest component scores.
 
@@ -154,15 +156,16 @@ Dashboard capabilities:
 - Add ticker flow that calls `POST /api/symbols`
 - S&P 500 universe sync/autocomplete
 - Data refresh trigger
+- Global strategy selector
 - Four pages: Home, Stock, Signals, Backtesting
 - Price with SMA 20/SMA 50/SMA 200, Bollinger/Keltner bands, and position overlay
 - MACD chart
 - RSI chart
 - Stochastic chart
 - Algorithm score transparency panel
-- Signal catalog and latest full signal matrix
+- Expandable signal catalog and latest full signal matrix
 - Backtest equity vs benchmark
-- Signal table
+- Custom strategy scorecard builder on the Backtesting page
 - Paper orders/equity snapshot
 
 Nginx production container proxies `/api/` and `/health` to the backend service.
@@ -294,7 +297,7 @@ KDB verification:
    - Dockerfile uses Corepack and pnpm.
 
 4. Strategy is deliberately basic.
-   - Next useful improvements: parameterized indicators, symbol basket backtests, transaction lots, cash accounting, benchmark selection, walk-forward periods.
+   - Next useful improvements: persisted custom strategies, richer expression DSL, parameterized indicator windows, symbol basket backtests, transaction lots, cash accounting, benchmark selection, walk-forward periods.
 
 5. Observability is minimal.
    - Add structured logs, request IDs, Prometheus metrics, and KDB query timing if turning this into a richer learning project.

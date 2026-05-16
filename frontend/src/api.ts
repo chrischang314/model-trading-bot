@@ -1,5 +1,6 @@
 import type {
   BacktestResult,
+  CustomStrategyConfig,
   OverviewRow,
   PaperSnapshot,
   SignalCatalogItem,
@@ -22,13 +23,13 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return response.json();
 }
 
-export async function fetchOverview(): Promise<OverviewRow[]> {
-  const envelope = await request<{ data: OverviewRow[] }>("/overview");
+export async function fetchOverview(strategyId?: string, customStrategy?: CustomStrategyConfig): Promise<OverviewRow[]> {
+  const envelope = await request<{ data: OverviewRow[] }>(`/overview${strategyQuery(strategyId, customStrategy)}`);
   return envelope.data;
 }
 
-export async function fetchTimeseries(symbol: string): Promise<SignalPoint[]> {
-  const envelope = await request<{ data: SignalPoint[] }>(`/timeseries/${symbol}`);
+export async function fetchTimeseries(symbol: string, strategyId?: string, customStrategy?: CustomStrategyConfig): Promise<SignalPoint[]> {
+  const envelope = await request<{ data: SignalPoint[] }>(`/timeseries/${symbol}${strategyQuery(strategyId, customStrategy)}`);
   return envelope.data;
 }
 
@@ -46,8 +47,13 @@ export async function addSymbols(symbols: string[]): Promise<void> {
   });
 }
 
-export async function fetchStrategy(): Promise<StrategyInfo> {
-  const envelope = await request<{ data: StrategyInfo }>("/strategy");
+export async function fetchStrategies(): Promise<StrategyInfo[]> {
+  const envelope = await request<{ data: StrategyInfo[] }>("/strategies");
+  return envelope.data;
+}
+
+export async function fetchStrategy(strategyId?: string, customStrategy?: CustomStrategyConfig): Promise<StrategyInfo> {
+  const envelope = await request<{ data: StrategyInfo }>(`/strategy${strategyQuery(strategyId, customStrategy)}`);
   return envelope.data;
 }
 
@@ -56,8 +62,8 @@ export async function fetchSignalCatalog(): Promise<SignalCatalogItem[]> {
   return envelope.data;
 }
 
-export async function fetchLatestSignals(): Promise<OverviewRow[]> {
-  const envelope = await request<{ data: OverviewRow[] }>("/signals/latest");
+export async function fetchLatestSignals(strategyId?: string, customStrategy?: CustomStrategyConfig): Promise<OverviewRow[]> {
+  const envelope = await request<{ data: OverviewRow[] }>(`/signals/latest${strategyQuery(strategyId, customStrategy)}`);
   return envelope.data;
 }
 
@@ -71,18 +77,36 @@ export async function refreshSp500Universe(): Promise<UniverseResponse> {
   return envelope.data;
 }
 
-export async function runBacktest(symbol: string): Promise<BacktestResult> {
+export async function runBacktest(symbol: string, strategyId?: string, customStrategy?: CustomStrategyConfig): Promise<BacktestResult> {
   const envelope = await request<{ data: BacktestResult }>("/backtests", {
     method: "POST",
-    body: JSON.stringify({ symbol, initial_capital: 100000, fee_bps: 1, slippage_bps: 2 })
+    body: JSON.stringify({ symbol, initial_capital: 100000, fee_bps: 1, slippage_bps: 2, strategy_id: strategyId, custom_strategy: customStrategy })
   });
   return envelope.data;
 }
 
-export async function runPaper(symbols: string[]): Promise<PaperSnapshot> {
+export async function runPaper(symbols: string[], strategyId?: string, customStrategy?: CustomStrategyConfig): Promise<PaperSnapshot> {
   const envelope = await request<{ data: PaperSnapshot }>("/paper/run", {
     method: "POST",
-    body: JSON.stringify({ symbols, cash: 100000 })
+    body: JSON.stringify({ symbols, cash: 100000, strategy_id: strategyId, custom_strategy: customStrategy })
   });
   return envelope.data;
+}
+
+function strategyQuery(strategyId?: string, customStrategy?: CustomStrategyConfig) {
+  if (!strategyId) {
+    return "";
+  }
+  const params = new URLSearchParams({ strategy_id: strategyId });
+  if (strategyId === "custom_scorecard" && customStrategy) {
+    params.set("custom_name", customStrategy.name);
+    params.set("min_signal_score", String(customStrategy.min_signal_score));
+    params.set("max_rsi", String(customStrategy.max_rsi));
+    params.set("require_above_sma20", String(customStrategy.require_above_sma20));
+    params.set("require_positive_macd", String(customStrategy.require_positive_macd));
+    if (customStrategy.min_rsi != null) params.set("min_rsi", String(customStrategy.min_rsi));
+    if (customStrategy.min_adx != null) params.set("min_adx", String(customStrategy.min_adx));
+    if (customStrategy.min_momentum_score != null) params.set("min_momentum_score", String(customStrategy.min_momentum_score));
+  }
+  return `?${params.toString()}`;
 }

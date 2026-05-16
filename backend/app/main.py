@@ -4,7 +4,7 @@ import asyncio
 from datetime import date
 
 import pandas as pd
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import Depends, FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import settings
@@ -12,7 +12,8 @@ from app.models import ApiEnvelope, BacktestRequest, IngestRequest, IngestRespon
 from app.services.backtest import run_long_cash_backtest
 from app.services.data_provider import create_provider
 from app.services.paper import run_paper_snapshot
-from app.services.signals import SIGNAL_CATALOG, STRATEGY_METADATA, calculate_signals
+from app.services.signals import SIGNAL_CATALOG, calculate_signals
+from app.services.strategies import DEFAULT_STRATEGY_ID, apply_strategy, get_strategy_metadata, list_strategies
 from app.services.universe import SP500UniverseService
 from app.storage import create_storage
 from app.utils import clean_records, normalize_symbols
@@ -30,6 +31,32 @@ app.add_middleware(
 provider = create_provider(settings.data_provider)
 storage = create_storage(settings)
 universe_service = SP500UniverseService(settings.local_data_dir / "universe" / "sp500.json", settings.sp500_refresh_hours)
+
+
+def _strategy_context(
+    strategy_id: str = Query(default=DEFAULT_STRATEGY_ID),
+    custom_name: str = Query(default="Custom scorecard"),
+    min_signal_score: float = Query(default=5.0),
+    max_rsi: float = Query(default=78.0),
+    min_rsi: float | None = Query(default=None),
+    require_above_sma20: bool = Query(default=True),
+    require_positive_macd: bool = Query(default=False),
+    min_adx: float | None = Query(default=None),
+    min_momentum_score: float | None = Query(default=None),
+) -> tuple[str, dict | None]:
+    custom_strategy = None
+    if strategy_id == "custom_scorecard":
+        custom_strategy = {
+            "name": custom_name,
+            "min_signal_score": min_signal_score,
+            "max_rsi": max_rsi,
+            "min_rsi": min_rsi,
+            "require_above_sma20": require_above_sma20,
+            "require_positive_macd": require_positive_macd,
+            "min_adx": min_adx,
+            "min_momentum_score": min_momentum_score,
+        }
+    return strategy_id, custom_strategy
 
 
 @app.on_event("startup")
@@ -66,9 +93,18 @@ def add_symbols(request: SymbolRequest) -> IngestResponse:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
 
 
+@app.get("/api/strategies", response_model=ApiEnvelope)
+def strategies() -> ApiEnvelope:
+    return ApiEnvelope(data=list_strategies())
+
+
 @app.get("/api/strategy", response_model=ApiEnvelope)
-def strategy() -> ApiEnvelope:
-    return ApiEnvelope(data=STRATEGY_METADATA)
+def strategy(strategy_context: tuple[str, dict | None] = Depends(_strategy_context)) -> ApiEnvelope:
+    strategy_id, custom_strategy = strategy_context
+    try:
+        return ApiEnvelope(data=get_strategy_metadata(strategy_id, custom_strategy))
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
 
 
 @app.get("/api/signals/catalog", response_model=ApiEnvelope)
@@ -80,9 +116,11 @@ def signal_catalog() -> ApiEnvelope:
 def latest_signals(
     symbols: str | None = Query(default=None, description="Comma-separated symbol list. Defaults to ingested/default symbols."),
     limit: int = Query(default=500, ge=1, le=1000),
+    strategy_context: tuple[str, dict | None] = Depends(_strategy_context),
 ) -> ApiEnvelope:
+    strategy_id, custom_strategy = strategy_context
     symbol_list = normalize_symbols(symbols.split(",")) if symbols else _available_symbols()
-    signals = _signals_or_bootstrap(symbol_list)
+    signals = _signals_or_bootstrap(symbol_list, strategy_id, custom_strategy)
     if signals.empty:
         return ApiEnvelope(data=[])
     latest = signals.sort_values("date").groupby("sym", as_index=False).tail(1)
@@ -91,7 +129,8 @@ def latest_signals(
 
 
 @app.get("/api/explain/{symbol}", response_model=ApiEnvelope)
-def explain(symbol: str) -> ApiEnvelope:
+def explain(symbol: str, strategy_context: tuple[str, dict | None] = Depends(_strategy_context)) -> ApiEnvelope:
+    strategy_id, custom_strategy = strategy_context
     clean_symbol = normalize_symbols([symbol])[0]
     signals = storage.get_signals(symbols=[clean_symbol])
     if signals.empty and settings.auto_ingest_on_empty:
@@ -99,16 +138,18 @@ def explain(symbol: str) -> ApiEnvelope:
         signals = storage.get_signals(symbols=[clean_symbol])
     if signals.empty:
         raise HTTPException(status_code=404, detail=f"No signals available for {clean_symbol}")
+    signals = apply_strategy(signals, strategy_id, custom_strategy)
     latest = clean_records(signals.sort_values("date").tail(1))[0]
     components = []
-    for component in STRATEGY_METADATA["components"]:
+    strategy_metadata = get_strategy_metadata(strategy_id, custom_strategy)
+    for component in strategy_metadata["components"]:
         components.append(
             {
                 **component,
                 "value": latest.get(component["key"]),
             }
         )
-    return ApiEnvelope(data={"symbol": clean_symbol, "latest": latest, "components": components, "strategy": STRATEGY_METADATA})
+    return ApiEnvelope(data={"symbol": clean_symbol, "latest": latest, "components": components, "strategy": strategy_metadata})
 
 
 @app.get("/api/universe/sp500", response_model=ApiEnvelope)
@@ -136,9 +177,10 @@ def ingest(request: IngestRequest) -> IngestResponse:
 
 
 @app.get("/api/overview", response_model=ApiEnvelope)
-def overview() -> ApiEnvelope:
+def overview(strategy_context: tuple[str, dict | None] = Depends(_strategy_context)) -> ApiEnvelope:
+    strategy_id, custom_strategy = strategy_context
     symbols = _available_symbols()
-    signals = _signals_or_bootstrap(symbols)
+    signals = _signals_or_bootstrap(symbols, strategy_id, custom_strategy)
     bars = storage.get_bars(symbols=symbols)
     if signals.empty or bars.empty:
         return ApiEnvelope(data=[])
@@ -156,12 +198,19 @@ def overview() -> ApiEnvelope:
 
 
 @app.get("/api/timeseries/{symbol}", response_model=ApiEnvelope)
-def timeseries(symbol: str, start: date | None = None, end: date | None = None) -> ApiEnvelope:
+def timeseries(
+    symbol: str,
+    start: date | None = None,
+    end: date | None = None,
+    strategy_context: tuple[str, dict | None] = Depends(_strategy_context),
+) -> ApiEnvelope:
+    strategy_id, custom_strategy = strategy_context
     clean_symbol = normalize_symbols([symbol])[0]
     signals = storage.get_signals(symbols=[clean_symbol], start=start, end=end)
     if signals.empty and settings.auto_ingest_on_empty:
         run_ingestion(IngestRequest(symbols=[clean_symbol], period="2y"))
         signals = storage.get_signals(symbols=[clean_symbol], start=start, end=end)
+    signals = apply_strategy(signals, strategy_id, custom_strategy)
     return ApiEnvelope(data=clean_records(signals))
 
 
@@ -172,6 +221,8 @@ def backtest(request: BacktestRequest) -> ApiEnvelope:
     if signals.empty and settings.auto_ingest_on_empty:
         run_ingestion(IngestRequest(symbols=[symbol], start=request.start, end=request.end))
         signals = storage.get_signals(symbols=[symbol], start=request.start, end=request.end)
+    custom_strategy = request.custom_strategy.model_dump() if request.custom_strategy else None
+    signals = apply_strategy(signals, request.strategy_id, custom_strategy)
     try:
         result = run_long_cash_backtest(
             signals,
@@ -187,6 +238,7 @@ def backtest(request: BacktestRequest) -> ApiEnvelope:
             "metrics": result.metrics,
             "equity_curve": clean_records(result.equity_curve),
             "trades": clean_records(result.trades),
+            "strategy": get_strategy_metadata(request.strategy_id, custom_strategy),
         }
     )
 
@@ -194,7 +246,8 @@ def backtest(request: BacktestRequest) -> ApiEnvelope:
 @app.post("/api/paper/run", response_model=ApiEnvelope)
 def paper(request: PaperRequest) -> ApiEnvelope:
     symbols = normalize_symbols(request.symbols or settings.default_symbols)
-    signals = _signals_or_bootstrap(symbols)
+    custom_strategy = request.custom_strategy.model_dump() if request.custom_strategy else None
+    signals = _signals_or_bootstrap(symbols, request.strategy_id, custom_strategy)
     return ApiEnvelope(data=run_paper_snapshot(signals, request.cash))
 
 
@@ -214,12 +267,16 @@ def run_ingestion(request: IngestRequest) -> IngestResponse:
     )
 
 
-def _signals_or_bootstrap(symbols: list[str]) -> pd.DataFrame:
+def _signals_or_bootstrap(
+    symbols: list[str],
+    strategy_id: str = DEFAULT_STRATEGY_ID,
+    custom_strategy: dict | None = None,
+) -> pd.DataFrame:
     signals = storage.get_signals(symbols=symbols)
     if signals.empty and settings.auto_ingest_on_empty:
         run_ingestion(IngestRequest(symbols=symbols, period="2y"))
         signals = storage.get_signals(symbols=symbols)
-    return signals
+    return apply_strategy(signals, strategy_id, custom_strategy)
 
 
 def _available_symbols() -> list[str]:

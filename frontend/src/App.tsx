@@ -3,6 +3,8 @@ import type { FormEvent, ReactElement, ReactNode } from "react";
 import {
   Activity,
   BarChart3,
+  ChevronDown,
+  ChevronRight,
   Database,
   Gauge,
   Layers,
@@ -12,6 +14,7 @@ import {
   RefreshCw,
   Search,
   Server,
+  SlidersHorizontal,
   Wallet
 } from "lucide-react";
 import {
@@ -32,6 +35,7 @@ import {
   fetchOverview,
   fetchSignalCatalog,
   fetchSp500Universe,
+  fetchStrategies,
   fetchStrategy,
   fetchTimeseries,
   ingest,
@@ -41,6 +45,7 @@ import {
 } from "./api";
 import type {
   BacktestResult,
+  CustomStrategyConfig,
   OverviewRow,
   PaperSnapshot,
   SignalCatalogItem,
@@ -51,6 +56,18 @@ import type {
 } from "./types";
 
 const DEFAULT_SYMBOLS = ["AAPL", "AMZN", "META", "NFLX", "GOOGL"];
+const DEFAULT_STRATEGY_ID = "multi_factor_scorecard";
+const CUSTOM_STRATEGY_ID = "custom_scorecard";
+const DEFAULT_CUSTOM_STRATEGY: CustomStrategyConfig = {
+  name: "Custom scorecard",
+  min_signal_score: 5,
+  max_rsi: 78,
+  min_rsi: null,
+  require_above_sma20: true,
+  require_positive_macd: false,
+  min_adx: null,
+  min_momentum_score: null
+};
 const PAGES = ["home", "stock", "signals", "backtesting"] as const;
 type Page = (typeof PAGES)[number];
 
@@ -93,6 +110,9 @@ export function App() {
   const [backtest, setBacktest] = useState<BacktestResult | null>(null);
   const [paper, setPaper] = useState<PaperSnapshot | null>(null);
   const [strategy, setStrategy] = useState<StrategyInfo | null>(null);
+  const [strategies, setStrategies] = useState<StrategyInfo[]>([]);
+  const [selectedStrategyId, setSelectedStrategyId] = useState(DEFAULT_STRATEGY_ID);
+  const [customStrategy, setCustomStrategy] = useState<CustomStrategyConfig>(DEFAULT_CUSTOM_STRATEGY);
   const [catalog, setCatalog] = useState<SignalCatalogItem[]>([]);
   const [universe, setUniverse] = useState<UniverseResponse | null>(null);
   const [newSymbol, setNewSymbol] = useState("");
@@ -110,6 +130,7 @@ export function App() {
   const latest = overview.find((row) => row.sym === selectedSymbol) ?? overview[0];
   const scoreTone = (latest?.signal_score ?? 0) >= 5 ? "positive" : (latest?.signal_score ?? 0) < 0 ? "negative" : "neutral";
   const universeOptions = useMemo(() => universe?.members.map((member) => member.symbol) ?? [], [universe]);
+  const selectedCustomStrategy = selectedStrategyId === CUSTOM_STRATEGY_ID ? customStrategy : undefined;
   const displayedSignals = useMemo(() => {
     const needle = signalFilter.trim().toUpperCase();
     if (!needle) {
@@ -134,23 +155,25 @@ export function App() {
     setAppLoading(true);
     setError(null);
     try {
-      const [rows, signalRows, strategyInfo, catalogRows, universeRows] = await Promise.all([
-        fetchOverview(),
-        fetchLatestSignals(),
-        fetchStrategy(),
+      const [rows, signalRows, strategyInfo, strategyRows, catalogRows, universeRows] = await Promise.all([
+        fetchOverview(selectedStrategyId, selectedCustomStrategy),
+        fetchLatestSignals(selectedStrategyId, selectedCustomStrategy),
+        fetchStrategy(selectedStrategyId, selectedCustomStrategy),
+        fetchStrategies(),
         fetchSignalCatalog(),
         fetchSp500Universe(false).catch(() => null)
       ]);
       setOverview(rows);
       setLatestSignals(signalRows);
       setStrategy(strategyInfo);
+      setStrategies(strategyRows);
       setCatalog(catalogRows);
       if (universeRows) {
         setUniverse(universeRows);
       }
       const active = rows.some((row) => row.sym === symbol) ? symbol : rows[0]?.sym ?? DEFAULT_SYMBOLS[0];
       setSelectedSymbol(active);
-      await loadSymbol(active, rows, true);
+      await loadSymbol(active, rows, true, selectedStrategyId, selectedCustomStrategy);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Initial load failed");
     } finally {
@@ -158,14 +181,20 @@ export function App() {
     }
   }
 
-  async function loadSymbol(symbol: string, rows = overview, includePaper = false) {
+  async function loadSymbol(
+    symbol: string,
+    rows = overview,
+    includePaper = false,
+    strategyId = selectedStrategyId,
+    custom = strategyId === CUSTOM_STRATEGY_ID ? customStrategy : undefined
+  ) {
     setSymbolLoading(true);
     setError(null);
     try {
       const requests: [Promise<SignalPoint[]>, Promise<BacktestResult>, Promise<PaperSnapshot> | null] = [
-        fetchTimeseries(symbol),
-        runBacktest(symbol),
-        includePaper ? runPaper(rows.length ? rows.map((row) => row.sym) : DEFAULT_SYMBOLS) : null
+        fetchTimeseries(symbol, strategyId, custom),
+        runBacktest(symbol, strategyId, custom),
+        includePaper ? runPaper(rows.length ? rows.map((row) => row.sym) : DEFAULT_SYMBOLS, strategyId, custom) : null
       ];
       const [points, backtestResult, paperSnapshot] = await Promise.all(requests.map((request) => request ?? Promise.resolve(null)));
       setSelectedSymbol(symbol);
@@ -181,11 +210,20 @@ export function App() {
     }
   }
 
-  async function reloadOverview(nextSymbol = selectedSymbol) {
-    const [rows, signalRows] = await Promise.all([fetchOverview(), fetchLatestSignals()]);
+  async function reloadOverview(
+    nextSymbol = selectedSymbol,
+    strategyId = selectedStrategyId,
+    custom = strategyId === CUSTOM_STRATEGY_ID ? customStrategy : undefined
+  ) {
+    const [rows, signalRows, strategyInfo] = await Promise.all([
+      fetchOverview(strategyId, custom),
+      fetchLatestSignals(strategyId, custom),
+      fetchStrategy(strategyId, custom)
+    ]);
     setOverview(rows);
     setLatestSignals(signalRows);
-    await loadSymbol(nextSymbol, rows, true);
+    setStrategy(strategyInfo);
+    await loadSymbol(nextSymbol, rows, true, strategyId, custom);
   }
 
   async function refreshData() {
@@ -248,16 +286,33 @@ export function App() {
 
   async function runSelectedBacktest() {
     setBacktestRunning(true);
-    setStatus(`Running backtest for ${selectedSymbol}...`);
+    setStatus(`Running ${strategy?.label ?? "strategy"} backtest for ${selectedSymbol}...`);
     setError(null);
     try {
-      setBacktest(await runBacktest(selectedSymbol));
-      setStatus(`Backtest updated for ${selectedSymbol}.`);
+      setBacktest(await runBacktest(selectedSymbol, selectedStrategyId, selectedCustomStrategy));
+      setStatus(`Backtest updated for ${selectedSymbol} using ${strategy?.label ?? "selected strategy"}.`);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Backtest failed");
     } finally {
       setBacktestRunning(false);
     }
+  }
+
+  async function changeStrategy(strategyId: string, nextCustom = customStrategy) {
+    const custom = strategyId === CUSTOM_STRATEGY_ID ? nextCustom : undefined;
+    setSelectedStrategyId(strategyId);
+    setStatus("Switching strategy and recalculating views...");
+    setError(null);
+    try {
+      await reloadOverview(selectedSymbol, strategyId, custom);
+      setStatus(`Strategy switched to ${strategyId === CUSTOM_STRATEGY_ID ? nextCustom.name : strategies.find((item) => item.id === strategyId)?.label ?? strategyId}.`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Strategy switch failed");
+    }
+  }
+
+  async function applyCustomStrategy() {
+    await changeStrategy(CUSTOM_STRATEGY_ID, customStrategy);
   }
 
   useEffect(() => {
@@ -278,6 +333,16 @@ export function App() {
               {(symbols.length ? symbols : DEFAULT_SYMBOLS).map((symbol) => (
                 <option key={symbol} value={symbol}>
                   {symbol}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="selectWrap strategyWrap" title="Strategy">
+            <SlidersHorizontal size={16} />
+            <select value={selectedStrategyId} onChange={(event) => changeStrategy(event.target.value)} disabled={appLoading || symbolLoading}>
+              {(strategies.length ? strategies : [{ id: DEFAULT_STRATEGY_ID, label: "Scorecard" } as StrategyInfo]).map((item) => (
+                <option key={item.id} value={item.id}>
+                  {item.label}
                 </option>
               ))}
             </select>
@@ -368,6 +433,10 @@ export function App() {
           selectedSymbol={selectedSymbol}
           backtest={backtest}
           latest={latest}
+          strategy={strategy}
+          customStrategy={customStrategy}
+          setCustomStrategy={setCustomStrategy}
+          applyCustomStrategy={applyCustomStrategy}
           backtestRunning={backtestRunning}
           runSelectedBacktest={runSelectedBacktest}
         />
@@ -404,7 +473,7 @@ function HomePage({
         <Metric icon={<Activity size={18} />} label="Top Signal" value={leaders[0]?.sym ?? "-"} tone="positive" />
         <Metric icon={<Gauge size={18} />} label="Top Score" value={fmt(leaders[0]?.signal_score)} tone="positive" />
         <Metric icon={<Wallet size={18} />} label="Paper Equity" value={paper ? money.format(paper.equity) : "-"} tone="positive" />
-        <Metric icon={<Server size={18} />} label="Strategy" value={strategy ? "Scorecard" : "-"} />
+        <Metric icon={<Server size={18} />} label="Strategy" value={strategy?.label ?? "-"} />
       </section>
 
       <section className="homeGrid">
@@ -530,6 +599,7 @@ function SignalsPage({
   setSignalFilter: (value: string) => void;
   chooseSymbol: (symbol: string) => void;
 }) {
+  const [expandedSignal, setExpandedSignal] = useState<string | null>(null);
   const groups = useMemo(() => {
     return catalog.reduce<Record<string, SignalCatalogItem[]>>((accumulator, item) => {
       accumulator[item.group] = [...(accumulator[item.group] ?? []), item];
@@ -550,8 +620,22 @@ function SignalsPage({
               <h3>{titleCase(group)}</h3>
               {items.map((item) => (
                 <div className="catalogItem" key={item.key}>
-                  <strong>{item.label}</strong>
-                  <span>{item.description}</span>
+                  <button
+                    className="catalogItemButton"
+                    type="button"
+                    aria-expanded={expandedSignal === item.key}
+                    onClick={() => setExpandedSignal(expandedSignal === item.key ? null : item.key)}
+                  >
+                    <strong>{item.label}</strong>
+                    {expandedSignal === item.key ? <ChevronDown size={15} /> : <ChevronRight size={15} />}
+                  </button>
+                  {expandedSignal === item.key ? (
+                    <div className="catalogDetails">
+                      <p>{item.description}</p>
+                      {item.formula ? <span>{item.formula}</span> : null}
+                      {item.interpretation ? <span>{item.interpretation}</span> : null}
+                    </div>
+                  ) : null}
                 </div>
               ))}
             </div>
@@ -604,12 +688,20 @@ function BacktestingPage({
   selectedSymbol,
   backtest,
   latest,
+  strategy,
+  customStrategy,
+  setCustomStrategy,
+  applyCustomStrategy,
   backtestRunning,
   runSelectedBacktest
 }: {
   selectedSymbol: string;
   backtest: BacktestResult | null;
   latest: OverviewRow | undefined;
+  strategy: StrategyInfo | null;
+  customStrategy: CustomStrategyConfig;
+  setCustomStrategy: (value: CustomStrategyConfig) => void;
+  applyCustomStrategy: () => void;
   backtestRunning: boolean;
   runSelectedBacktest: () => void;
 }) {
@@ -661,6 +753,14 @@ function BacktestingPage({
         </div>
       </div>
 
+      <StrategyControlPanel
+        strategy={strategy}
+        customStrategy={customStrategy}
+        setCustomStrategy={setCustomStrategy}
+        applyCustomStrategy={applyCustomStrategy}
+        disabled={backtestRunning}
+      />
+
       <div className="panel">
         <div className="panelHeader">
           <h2>Current Rule State</h2>
@@ -669,6 +769,99 @@ function BacktestingPage({
         <div className="reasonLine">{latest?.signal_reason ?? "-"}</div>
       </div>
     </section>
+  );
+}
+
+function StrategyControlPanel({
+  strategy,
+  customStrategy,
+  setCustomStrategy,
+  applyCustomStrategy,
+  disabled
+}: {
+  strategy: StrategyInfo | null;
+  customStrategy: CustomStrategyConfig;
+  setCustomStrategy: (value: CustomStrategyConfig) => void;
+  applyCustomStrategy: () => void;
+  disabled: boolean;
+}) {
+  function updateNumber(
+    key: "min_signal_score" | "max_rsi" | "min_rsi" | "min_adx" | "min_momentum_score",
+    value: string
+  ) {
+    const fallback = key === "min_signal_score" ? DEFAULT_CUSTOM_STRATEGY.min_signal_score : key === "max_rsi" ? DEFAULT_CUSTOM_STRATEGY.max_rsi : null;
+    setCustomStrategy({ ...customStrategy, [key]: value === "" ? fallback : Number(value) } as CustomStrategyConfig);
+  }
+
+  return (
+    <div className="panel strategyPanel">
+      <div className="panelHeader">
+        <h2>Strategy</h2>
+        <span>{strategy?.label ?? "-"}</span>
+      </div>
+      <div className="strategySummary">
+        <strong>{strategy?.description ?? "-"}</strong>
+        <p>{strategy?.position_rule ?? "-"}</p>
+      </div>
+      {strategy?.id === CUSTOM_STRATEGY_ID ? (
+        <form
+          className="customStrategyForm"
+          onSubmit={(event) => {
+            event.preventDefault();
+            applyCustomStrategy();
+          }}
+        >
+          <label>
+            <span>Name</span>
+            <input value={customStrategy.name} onChange={(event) => setCustomStrategy({ ...customStrategy, name: event.target.value })} />
+          </label>
+          <label>
+            <span>Min Score</span>
+            <input inputMode="decimal" value={customStrategy.min_signal_score} onChange={(event) => updateNumber("min_signal_score", event.target.value)} />
+          </label>
+          <label>
+            <span>Max RSI</span>
+            <input inputMode="decimal" value={customStrategy.max_rsi} onChange={(event) => updateNumber("max_rsi", event.target.value)} />
+          </label>
+          <label>
+            <span>Min RSI</span>
+            <input inputMode="decimal" value={customStrategy.min_rsi ?? ""} onChange={(event) => updateNumber("min_rsi", event.target.value)} />
+          </label>
+          <label>
+            <span>Min ADX</span>
+            <input inputMode="decimal" value={customStrategy.min_adx ?? ""} onChange={(event) => updateNumber("min_adx", event.target.value)} />
+          </label>
+          <label>
+            <span>Min Momentum</span>
+            <input
+              inputMode="decimal"
+              value={customStrategy.min_momentum_score ?? ""}
+              onChange={(event) => updateNumber("min_momentum_score", event.target.value)}
+            />
+          </label>
+          <label className="checkRow">
+            <input
+              type="checkbox"
+              checked={customStrategy.require_above_sma20}
+              onChange={(event) => setCustomStrategy({ ...customStrategy, require_above_sma20: event.target.checked })}
+            />
+            <span>Close above SMA 20</span>
+          </label>
+          <label className="checkRow">
+            <input
+              type="checkbox"
+              checked={customStrategy.require_positive_macd}
+              onChange={(event) => setCustomStrategy({ ...customStrategy, require_positive_macd: event.target.checked })}
+            />
+            <span>MACD positive</span>
+          </label>
+          <button className="commandButton compact" type="submit" disabled={disabled}>
+            <SlidersHorizontal size={17} />
+            Apply Custom
+          </button>
+        </form>
+      ) : null}
+    </div>
   );
 }
 

@@ -92,27 +92,26 @@ The dashboard calls:
 - `POST /api/symbols` to add and ingest new tickers.
 - `GET /api/universe/sp500` and `POST /api/universe/sp500/refresh` to view or re-poll S&P 500 constituents.
 - `POST /api/ingest` to fetch bars, write bars/signals, and refresh the store.
-- `GET /api/strategy` for algorithm metadata and score components.
-- `GET /api/signals/catalog` and `GET /api/signals/latest` for signal descriptions and the latest full signal matrix.
+- `GET /api/strategies` and `GET /api/strategy` for algorithm metadata, strategy menu options, and score components.
+- `GET /api/signals/catalog` and `GET /api/signals/latest` for expandable signal descriptions and the latest full signal matrix.
 - `GET /api/explain/{symbol}` for the latest component-level explanation.
 - `GET /api/overview` for latest cross-symbol state.
 - `GET /api/timeseries/{symbol}` for chart data.
-- `POST /api/backtests` for the long/cash scorecard strategy.
-- `POST /api/paper/run` for a one-step paper account snapshot.
+- `POST /api/backtests` for the selected long/cash strategy.
+- `POST /api/paper/run` for a one-step paper account snapshot using the selected strategy.
 
 Default watched symbols are `AAPL,AMZN,META,NFLX,GOOGL`. The S&P 500 universe is cached separately and periodically refreshed with `SP500_REFRESH_HOURS` so ticker discovery does not require fetching price history for all 500+ listings on every page load.
 
 ## Strategy
 
-The toy strategy is intentionally simple but now uses a transparent scorecard:
+The toy strategy layer is intentionally simple but now supports a strategy registry:
 
-- Trend: SMA/EMA alignment, SMA 200, MACD histogram, ADX/+DI/-DI, and Donchian breakouts.
-- Momentum: RSI 14, stochastic %K/%D, Williams %R, CCI, 20-day momentum, and 12-1 month momentum.
-- Volatility: Bollinger Bands, Keltner Channels, ATR percentage, and realized volatility.
-- Volume: volume z-score, OBV direction, and rolling VWAP.
-- Long when score is at least 5, close is above SMA 20, and RSI is below 78.
-- Cash otherwise.
+- Built-in strategies: balanced scorecard, trend breakout, mean reversion, time-series momentum, and low-volatility trend.
+- Custom strategy: a constrained scorecard builder with score, RSI, SMA 20, MACD, ADX, and momentum filters.
+- Shared indicators: SMA/EMA, MACD, ADX/+DI/-DI, Donchian, RSI, stochastic, Williams %R, CCI, Bollinger Bands, Keltner Channels, ATR, realized volatility, OBV, volume z-score, rolling VWAP, 20-day momentum, and 12-1 month momentum.
 - Backtest uses next-day position application, a fee/slippage haircut, benchmark comparison, Sharpe, max drawdown, and trade list.
+
+Real trading systems commonly ingest algorithms as versioned source modules, reviewed configuration files, parameter sets for approved strategy templates, notebook research promoted into production code, or restricted DSL/rule expressions. This toy app uses the safer template/config route: built-ins are Python strategy functions, while the custom strategy UI sends a validated scorecard configuration instead of arbitrary executable code.
 
 The signal set is influenced by classic technical-analysis and momentum literature, including [Brock, Lakonishok & LeBaron](https://ideas.repec.org/a/bla/jfinan/v47y1992i5p1731-64.html) on moving-average and trading-range rules, [Lo, Mamaysky & Wang](https://web.mit.edu/wangj/www/pap/LoMamayskyWang00.pdf) on statistical technical-analysis foundations, [Jegadeesh & Titman](https://doi.org/10.1111/j.1540-6261.1993.tb04702.x) on cross-sectional momentum, [Moskowitz, Ooi & Pedersen](https://www.aqr.com/insights/research/journal-article/time-series-momentum) on time-series momentum, [Hurst, Ooi & Pedersen](https://www.aqr.com/insights/research/journal-article/a-century-of-evidence-on-trend-following-investing) on long-run trend following, and [Han, Yang & Zhou](https://www.cambridge.org/core/product/identifier/S0022109013000586/type/journal_article) on cross-sectional profitability of moving-average technical analysis.
 

@@ -25,6 +25,17 @@ class SymbolRequest(BaseModel):
     period: str = Field(default="2y", description="Provider period used when adding the symbol.")
 
 
+class CustomStrategyRequest(BaseModel):
+    name: str = "Custom scorecard"
+    min_signal_score: float = 5.0
+    max_rsi: float = 78.0
+    min_rsi: float | None = None
+    require_above_sma20: bool = True
+    require_positive_macd: bool = False
+    min_adx: float | None = None
+    min_momentum_score: float | None = None
+
+
 class BacktestRequest(BaseModel):
     symbol: str
     start: date | None = None
@@ -32,11 +43,15 @@ class BacktestRequest(BaseModel):
     initial_capital: float = 100_000
     fee_bps: float = 1.0
     slippage_bps: float = 2.0
+    strategy_id: str = "multi_factor_scorecard"
+    custom_strategy: CustomStrategyRequest | None = None
 
 
 class PaperRequest(BaseModel):
     symbols: list[str] | None = None
     cash: float = 100_000
+    strategy_id: str = "multi_factor_scorecard"
+    custom_strategy: CustomStrategyRequest | None = None
 
 
 class ApiEnvelope(BaseModel):
