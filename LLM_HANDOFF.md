@@ -163,6 +163,7 @@ Dashboard capabilities:
 - RSI chart
 - Stochastic chart
 - Algorithm score transparency panel
+- Signal Trend Explorer on the Signals page with signal chips, presets, normalized/raw scaling, position overlay, hover tooltips, legend, and brush zoom
 - Expandable signal catalog and latest full signal matrix
 - Backtest equity vs benchmark
 - Custom strategy scorecard builder on the Backtesting page

@@ -19,8 +19,10 @@ import {
 } from "lucide-react";
 import {
   Bar,
+  Brush,
   CartesianGrid,
   ComposedChart,
+  Legend,
   Line,
   LineChart,
   ReferenceLine,
@@ -96,6 +98,50 @@ const SIGNAL_MATRIX_COLUMNS = [
   ["zscore_20", "Z 20"],
   ["distance_52w_high", "52W Dist"]
 ] as const;
+
+const SIGNAL_TREND_EXTRAS = [
+  ["signal_score", "Score", "strategy"],
+  ["trend_score", "Trend Score", "strategy"],
+  ["momentum_score", "Momentum Score", "strategy"],
+  ["volatility_score", "Volatility Score", "strategy"],
+  ["volume_score", "Volume Score", "strategy"],
+  ["close", "Close", "price"],
+  ["return_1d", "1D Return", "returns"],
+  ["return_21d", "21D Return", "returns"],
+  ["return_63d", "63D Return", "returns"]
+] as const;
+
+const SIGNAL_TREND_PRESETS: Record<string, string[]> = {
+  Scores: ["signal_score", "trend_score", "momentum_score", "volatility_score", "volume_score"],
+  Trend: ["close", "sma_20", "sma_50", "sma_200", "macd_hist", "adx_14", "donchian_breakout"],
+  Momentum: ["rsi_14", "stoch_k", "stoch_d", "williams_r_14", "cci_20", "momentum_20d", "momentum_252_skip_21"],
+  Volatility: ["bb_width", "atr_pct", "realized_vol_20", "realized_vol_63", "keltner_upper", "keltner_lower"],
+  Volume: ["obv", "volume_z", "rolling_vwap_20"],
+  Returns: ["return_1d", "return_21d", "return_63d", "distance_52w_high"]
+};
+
+const SIGNAL_TREND_COLORS = [
+  "#0f766e",
+  "#2563eb",
+  "#d97706",
+  "#7c3aed",
+  "#dc2626",
+  "#059669",
+  "#4f46e5",
+  "#9333ea",
+  "#b45309",
+  "#0e7490",
+  "#be123c",
+  "#64748b"
+];
+
+type SignalTrendScale = "normalized" | "raw";
+type SignalTrendOption = { key: string; label: string; group: string };
+type TrendChartPoint = {
+  date: string;
+  position: number | null;
+  [key: string]: string | number | null;
+};
 
 const money = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 2 });
 const compact = new Intl.NumberFormat("en-US", { notation: "compact", maximumFractionDigits: 1 });
@@ -419,8 +465,14 @@ export function App() {
         <SignalsPage
           catalog={catalog}
           displayedSignals={displayedSignals}
+          selectedSymbol={selectedSymbol}
+          symbols={symbols.length ? symbols : DEFAULT_SYMBOLS}
+          series={series}
           signalFilter={signalFilter}
           setSignalFilter={setSignalFilter}
+          inspectSymbol={(symbol) => {
+            chooseSymbol(symbol);
+          }}
           chooseSymbol={(symbol) => {
             setPage("stock");
             chooseSymbol(symbol);
@@ -589,14 +641,22 @@ function StockPage({
 function SignalsPage({
   catalog,
   displayedSignals,
+  selectedSymbol,
+  symbols,
+  series,
   signalFilter,
   setSignalFilter,
+  inspectSymbol,
   chooseSymbol
 }: {
   catalog: SignalCatalogItem[];
   displayedSignals: OverviewRow[];
+  selectedSymbol: string;
+  symbols: string[];
+  series: SignalPoint[];
   signalFilter: string;
   setSignalFilter: (value: string) => void;
+  inspectSymbol: (symbol: string) => void;
   chooseSymbol: (symbol: string) => void;
 }) {
   const [expandedSignal, setExpandedSignal] = useState<string | null>(null);
@@ -609,6 +669,14 @@ function SignalsPage({
 
   return (
     <section className="signalsLayout">
+      <SignalTrendExplorer
+        catalog={catalog}
+        selectedSymbol={selectedSymbol}
+        symbols={symbols}
+        series={series}
+        inspectSymbol={inspectSymbol}
+      />
+
       <div className="panel">
         <div className="panelHeader">
           <h2>Signal Catalog</h2>
@@ -681,6 +749,162 @@ function SignalsPage({
         </div>
       </div>
     </section>
+  );
+}
+
+function SignalTrendExplorer({
+  catalog,
+  selectedSymbol,
+  symbols,
+  series,
+  inspectSymbol
+}: {
+  catalog: SignalCatalogItem[];
+  selectedSymbol: string;
+  symbols: string[];
+  series: SignalPoint[];
+  inspectSymbol: (symbol: string) => void;
+}) {
+  const [selectedKeys, setSelectedKeys] = useState<string[]>(["signal_score", "trend_score", "momentum_score", "rsi_14", "macd_hist"]);
+  const [scale, setScale] = useState<SignalTrendScale>("normalized");
+  const [showPosition, setShowPosition] = useState(true);
+  const options = useMemo(() => buildSignalTrendOptions(catalog), [catalog]);
+  const colorByKey = useMemo(
+    () => new Map(options.map((option, index) => [option.key, SIGNAL_TREND_COLORS[index % SIGNAL_TREND_COLORS.length]])),
+    [options]
+  );
+  const selectedOptions = selectedKeys
+    .map((key) => options.find((option) => option.key === key))
+    .filter((option): option is SignalTrendOption => Boolean(option));
+  const chartData = useMemo(() => buildSignalTrendData(series, selectedKeys, scale), [series, selectedKeys, scale]);
+  const legendHeight = selectedOptions.length > 20 ? 84 : selectedOptions.length > 10 ? 58 : 32;
+
+  function toggleSignal(key: string) {
+    setSelectedKeys((current) => {
+      if (current.includes(key)) {
+        return current.length === 1 ? current : current.filter((item) => item !== key);
+      }
+      return [...current, key];
+    });
+  }
+
+  function applyPreset(name: string) {
+    if (name === "All") {
+      setSelectedKeys(options.map((option) => option.key));
+      return;
+    }
+    const keys = (SIGNAL_TREND_PRESETS[name] ?? []).filter((key) => options.some((option) => option.key === key));
+    if (keys.length) {
+      setSelectedKeys(keys);
+    }
+  }
+
+  return (
+    <div className="panel signalTrendPanel" data-testid="signal-trend-explorer">
+      <div className="panelHeader matrixHeader">
+        <div>
+          <h2>Signal Trend Explorer</h2>
+          <span>{selectedSymbol}</span>
+        </div>
+        <div className="signalTrendControls">
+          <label className="selectWrap compactSelect" title="Trend symbol">
+            <BarChart3 size={15} />
+            <select value={selectedSymbol} onChange={(event) => inspectSymbol(event.target.value)}>
+              {symbols.map((symbol) => (
+                <option key={symbol} value={symbol}>
+                  {symbol}
+                </option>
+              ))}
+            </select>
+          </label>
+          <div className="segmentedControl">
+            <button type="button" className={scale === "normalized" ? "activeSegment" : ""} onClick={() => setScale("normalized")}>
+              Normalized
+            </button>
+            <button type="button" className={scale === "raw" ? "activeSegment" : ""} onClick={() => setScale("raw")}>
+              Raw
+            </button>
+          </div>
+          <label className="inlineCheck">
+            <input type="checkbox" checked={showPosition} onChange={(event) => setShowPosition(event.target.checked)} />
+            <span>Position</span>
+          </label>
+        </div>
+      </div>
+
+      <div className="presetRow">
+        {[...Object.keys(SIGNAL_TREND_PRESETS), "All"].map((name) => (
+          <button key={name} type="button" onClick={() => applyPreset(name)}>
+            {name}
+          </button>
+        ))}
+      </div>
+
+      <div className="signalPicker">
+        {options.map((option) => {
+          const active = selectedKeys.includes(option.key);
+          return (
+            <button
+              key={option.key}
+              type="button"
+              className={active ? "activeSignalChip" : ""}
+              onClick={() => toggleSignal(option.key)}
+              title={option.group}
+            >
+              <span style={{ backgroundColor: colorByKey.get(option.key) ?? "#111827" }} />
+              {option.label}
+            </button>
+          );
+        })}
+      </div>
+
+      <div className="chartBox signalTrendChart" data-testid="signal-trend-chart">
+        <ResponsiveContainer>
+          <LineChart data={chartData} margin={{ top: 12, right: 16, bottom: 0, left: 0 }}>
+            <CartesianGrid stroke="#e6e8ec" vertical={false} />
+            <XAxis dataKey="date" minTickGap={32} tickLine={false} axisLine={false} />
+            <YAxis yAxisId="main" width={64} domain={scale === "normalized" ? [0, 100] : ["auto", "auto"]} tickLine={false} axisLine={false} />
+            <YAxis yAxisId="position" orientation="right" hide domain={[0, 8]} />
+            <Tooltip content={<SignalTrendTooltip scale={scale} options={selectedOptions} />} />
+            <Legend verticalAlign="top" height={legendHeight} />
+            <ReferenceLine yAxisId="main" y={scale === "normalized" ? 50 : 0} stroke="#cbd5e1" strokeDasharray="4 4" />
+            {selectedOptions.map((option) => (
+              <Line
+                key={option.key}
+                yAxisId="main"
+                type="monotone"
+                dataKey={option.key}
+                name={option.label}
+                stroke={colorByKey.get(option.key) ?? "#111827"}
+                strokeWidth={2}
+                dot={false}
+                connectNulls
+                isAnimationActive={false}
+              />
+            ))}
+            {showPosition ? (
+              <Line
+                yAxisId="position"
+                type="stepAfter"
+                dataKey="position"
+                name="Position"
+                stroke="#10b981"
+                strokeWidth={1.6}
+                dot={false}
+                isAnimationActive={false}
+              />
+            ) : null}
+            <Brush dataKey="date" height={28} stroke="#0f766e" travellerWidth={10} />
+          </LineChart>
+        </ResponsiveContainer>
+      </div>
+
+      <div className="trendSummary">
+        <span>{chartData.length} observations</span>
+        <span>{selectedOptions.length} signals selected</span>
+        <span>{scale === "normalized" ? "Each line is scaled 0-100 for comparison" : "Raw indicator units"}</span>
+      </div>
+    </div>
   );
 }
 
@@ -1035,6 +1259,91 @@ function SmallMetric({ label, value }: { label: string; value: string }) {
       <strong>{value}</strong>
     </div>
   );
+}
+
+function SignalTrendTooltip({
+  active,
+  label,
+  payload,
+  scale,
+  options
+}: {
+  active?: boolean;
+  label?: string;
+  payload?: Array<{ color?: string; dataKey?: string; value?: number; payload?: TrendChartPoint }>;
+  scale: SignalTrendScale;
+  options: SignalTrendOption[];
+}) {
+  if (!active || !payload?.length) {
+    return null;
+  }
+  const optionByKey = new Map(options.map((option) => [option.key, option]));
+  return (
+    <div className="trendTooltip">
+      <strong>{label}</strong>
+      {payload
+        .filter((item) => item.dataKey && item.dataKey !== "position")
+        .map((item) => {
+          const key = String(item.dataKey);
+          const option = optionByKey.get(key);
+          const raw = item.payload?.[`raw_${key}`];
+          return (
+            <span key={key}>
+              <i style={{ backgroundColor: item.color ?? "#111827" }} />
+              {option?.label ?? key}: {scale === "normalized" ? `${fmt(item.value)} (${formatSignalValue(key, raw as SignalValue)})` : formatSignalValue(key, item.value ?? null)}
+            </span>
+          );
+        })}
+      {payload.some((item) => item.dataKey === "position") ? <span>Position: {payload.find((item) => item.dataKey === "position")?.value ? "Long" : "Cash"}</span> : null}
+    </div>
+  );
+}
+
+function buildSignalTrendOptions(catalog: SignalCatalogItem[]): SignalTrendOption[] {
+  const seen = new Set<string>();
+  const options: SignalTrendOption[] = [];
+  for (const [key, label, group] of SIGNAL_TREND_EXTRAS) {
+    options.push({ key, label, group });
+    seen.add(key);
+  }
+  for (const item of catalog) {
+    if (!seen.has(item.key)) {
+      options.push({ key: item.key, label: item.label, group: item.group });
+      seen.add(item.key);
+    }
+  }
+  return options;
+}
+
+function buildSignalTrendData(series: SignalPoint[], selectedKeys: string[], scale: SignalTrendScale): TrendChartPoint[] {
+  const ranges = new Map<string, { min: number; max: number }>();
+  for (const key of selectedKeys) {
+    const values = series.map((point) => numericSignal(point[key])).filter((value): value is number => value != null);
+    ranges.set(key, values.length ? { min: Math.min(...values), max: Math.max(...values) } : { min: 0, max: 0 });
+  }
+  return series.map((point) => {
+    const row: TrendChartPoint = {
+      date: point.date,
+      position: typeof point.position === "number" ? point.position : null
+    };
+    for (const key of selectedKeys) {
+      const raw = numericSignal(point[key]);
+      row[`raw_${key}`] = raw;
+      if (raw == null) {
+        row[key] = null;
+      } else if (scale === "normalized") {
+        const range = ranges.get(key);
+        row[key] = range && range.max !== range.min ? ((raw - range.min) / (range.max - range.min)) * 100 : 50;
+      } else {
+        row[key] = raw;
+      }
+    }
+    return row;
+  });
+}
+
+function numericSignal(value: SignalValue | undefined) {
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
 }
 
 function labelPage(page: Page) {

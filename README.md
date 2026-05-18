@@ -96,7 +96,7 @@ The dashboard calls:
 - `GET /api/signals/catalog` and `GET /api/signals/latest` for expandable signal descriptions and the latest full signal matrix.
 - `GET /api/explain/{symbol}` for the latest component-level explanation.
 - `GET /api/overview` for latest cross-symbol state.
-- `GET /api/timeseries/{symbol}` for chart data.
+- `GET /api/timeseries/{symbol}` for price, indicator, position, and signal-trend chart data.
 - `POST /api/backtests` for the selected long/cash strategy.
 - `POST /api/paper/run` for a one-step paper account snapshot using the selected strategy.
 
@@ -109,6 +109,7 @@ The toy strategy layer is intentionally simple but now supports a strategy regis
 - Built-in strategies: balanced scorecard, trend breakout, mean reversion, time-series momentum, and low-volatility trend.
 - Custom strategy: a constrained scorecard builder with score, RSI, SMA 20, MACD, ADX, and momentum filters.
 - Shared indicators: SMA/EMA, MACD, ADX/+DI/-DI, Donchian, RSI, stochastic, Williams %R, CCI, Bollinger Bands, Keltner Channels, ATR, realized volatility, OBV, volume z-score, rolling VWAP, 20-day momentum, and 12-1 month momentum.
+- Signals page trend explorer: interactive line chart for every stored signal with symbol switching, presets, raw versus normalized scale, position overlay, hover tooltips, legend, and brush zoom.
 - Backtest uses next-day position application, a fee/slippage haircut, benchmark comparison, Sharpe, max drawdown, and trade list.
 
 Real trading systems commonly ingest algorithms as versioned source modules, reviewed configuration files, parameter sets for approved strategy templates, notebook research promoted into production code, or restricted DSL/rule expressions. This toy app uses the safer template/config route: built-ins are Python strategy functions, while the custom strategy UI sends a validated scorecard configuration instead of arbitrary executable code.

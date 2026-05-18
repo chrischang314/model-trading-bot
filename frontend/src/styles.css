@@ -342,8 +342,163 @@ h2 {
   min-height: 440px;
 }
 
+.signalTrendPanel {
+  min-height: 560px;
+}
+
 .matrixHeader {
   align-items: center;
+}
+
+.signalTrendControls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.compactSelect select {
+  min-width: 92px;
+}
+
+.segmentedControl {
+  display: inline-flex;
+  border: 1px solid #d6dae1;
+  border-radius: 8px;
+  overflow: hidden;
+  min-height: 38px;
+  background: #ffffff;
+}
+
+.segmentedControl button {
+  border: 0;
+  background: transparent;
+  color: #4b5563;
+  padding: 0 10px;
+  cursor: pointer;
+  font-weight: 800;
+}
+
+.segmentedControl button + button {
+  border-left: 1px solid #e5e7eb;
+}
+
+.segmentedControl .activeSegment {
+  background: #0f766e;
+  color: #ffffff;
+}
+
+.inlineCheck {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 38px;
+  color: #374151;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.presetRow {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  padding-bottom: 8px;
+}
+
+.presetRow button,
+.signalPicker button {
+  border: 1px solid #d6dae1;
+  border-radius: 8px;
+  background: #ffffff;
+  color: #374151;
+  min-height: 32px;
+  padding: 0 10px;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.presetRow button:hover,
+.signalPicker button:hover {
+  border-color: #9ca3af;
+}
+
+.signalPicker {
+  display: flex;
+  gap: 7px;
+  overflow-x: auto;
+  padding: 2px 0 10px;
+}
+
+.signalPicker button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: #6b7280;
+}
+
+.signalPicker button span {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+}
+
+.signalPicker .activeSignalChip {
+  border-color: #0f766e;
+  background: #ecfdf5;
+  color: #0f766e;
+}
+
+.signalTrendChart {
+  height: 380px;
+  min-height: 380px;
+}
+
+.trendSummary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+  color: #4b5563;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.trendSummary span {
+  border: 1px solid #e5e7eb;
+  border-radius: 999px;
+  padding: 5px 9px;
+}
+
+.trendTooltip {
+  display: grid;
+  gap: 6px;
+  max-width: 360px;
+  border: 1px solid #d6dae1;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.96);
+  padding: 10px;
+  box-shadow: 0 8px 24px rgba(17, 24, 39, 0.12);
+  font-size: 12px;
+}
+
+.trendTooltip strong,
+.trendTooltip span {
+  display: block;
+}
+
+.trendTooltip span {
+  color: #374151;
+}
+
+.trendTooltip i {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  margin-right: 6px;
 }
 
 .searchBox {
