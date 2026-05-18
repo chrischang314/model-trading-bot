@@ -158,14 +158,16 @@ Dashboard capabilities:
 - Data refresh trigger
 - Global strategy selector
 - Four pages: Home, Stock, Signals, Backtesting
-- Price with SMA 20/SMA 50/SMA 200, Bollinger/Keltner bands, and position overlay
+- Home page Trading System Walkthrough with interactive data/signals/strategy/backtest/paper stages and live readouts
+- Interactive price chart with range selection, SMA/Bollinger/Keltner/position layer toggles, hover tooltips, brush zoom, and principle cards
 - MACD chart
 - RSI chart
 - Stochastic chart
 - Algorithm score transparency panel
 - Signal Trend Explorer on the Signals page with signal chips, presets, normalized/raw scaling, position overlay, hover tooltips, legend, and brush zoom
 - Expandable signal catalog and latest full signal matrix
-- Backtest equity vs benchmark
+- Backtest equity chart with strategy/benchmark/drawdown/position layer toggles and brush zoom
+- Trade Anatomy panel for stepping through simulated trade events and the backtest accounting flow
 - Custom strategy scorecard builder on the Backtesting page
 - Paper orders/equity snapshot
 

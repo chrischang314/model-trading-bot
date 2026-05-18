@@ -109,7 +109,10 @@ The toy strategy layer is intentionally simple but now supports a strategy regis
 - Built-in strategies: balanced scorecard, trend breakout, mean reversion, time-series momentum, and low-volatility trend.
 - Custom strategy: a constrained scorecard builder with score, RSI, SMA 20, MACD, ADX, and momentum filters.
 - Shared indicators: SMA/EMA, MACD, ADX/+DI/-DI, Donchian, RSI, stochastic, Williams %R, CCI, Bollinger Bands, Keltner Channels, ATR, realized volatility, OBV, volume z-score, rolling VWAP, 20-day momentum, and 12-1 month momentum.
+- Home page walkthrough: an interactive stage explorer that connects data ingestion, signal calculation, strategy rules, backtesting, and paper trading to the current app state.
+- Stock page chart controls: range selection, layer toggles, brush zoom, hover tooltips, and principle cards for trend, momentum, model stance, and visible bars.
 - Signals page trend explorer: interactive line chart for every stored signal with symbol switching, presets, raw versus normalized scale, position overlay, hover tooltips, legend, and brush zoom.
+- Backtesting page education: equity, benchmark, drawdown, and position toggles plus a trade anatomy panel that steps through simulated trade events.
 - Backtest uses next-day position application, a fee/slippage haircut, benchmark comparison, Sharpe, max drawdown, and trade list.
 
 Real trading systems commonly ingest algorithms as versioned source modules, reviewed configuration files, parameter sets for approved strategy templates, notebook research promoted into production code, or restricted DSL/rule expressions. This toy app uses the safer template/config route: built-ins are Python strategy functions, while the custom strategy UI sends a validated scorecard configuration instead of arbitrary executable code.

@@ -283,6 +283,100 @@ h2 {
   gap: 14px;
 }
 
+.learningPanel {
+  margin-bottom: 14px;
+}
+
+.lessonShell {
+  display: grid;
+  grid-template-columns: minmax(180px, 0.35fr) minmax(0, 1fr);
+  gap: 14px;
+}
+
+.lessonRail {
+  display: grid;
+  gap: 8px;
+  align-self: start;
+}
+
+.lessonRail button {
+  border: 1px solid #d6dae1;
+  border-radius: 8px;
+  background: #ffffff;
+  color: #374151;
+  min-height: 40px;
+  padding: 0 10px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.lessonRail button span {
+  width: 22px;
+  height: 22px;
+  display: grid;
+  place-items: center;
+  border-radius: 999px;
+  background: #eef2ff;
+  color: #3730a3;
+  font-size: 11px;
+}
+
+.lessonRail .activeLesson {
+  border-color: #0f766e;
+  background: #ecfdf5;
+  color: #0f766e;
+}
+
+.lessonRail .activeLesson span {
+  background: #0f766e;
+  color: #ffffff;
+}
+
+.lessonBody {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.lessonCard {
+  min-width: 0;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  padding: 12px;
+  background: #ffffff;
+}
+
+.lessonCard.emphasis {
+  background: #f7faf8;
+  border-color: #cde5dc;
+}
+
+.lessonCard span {
+  display: block;
+  color: #6b7280;
+  font-size: 11px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.lessonCard strong {
+  display: block;
+  margin-top: 6px;
+  color: #111827;
+  line-height: 1.25;
+}
+
+.lessonCard p {
+  margin: 6px 0 0;
+  color: #4b5563;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
 .panel {
   min-width: 0;
   padding: 14px;
@@ -315,6 +409,59 @@ h2 {
 .chartBox.tall {
   height: 374px;
   min-height: 374px;
+}
+
+.interactiveChart {
+  margin-top: 8px;
+}
+
+.chartControlBar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 8px;
+}
+
+.layerToggles {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  flex-wrap: wrap;
+}
+
+.layerToggles button {
+  border: 1px solid #d6dae1;
+  border-radius: 8px;
+  min-height: 32px;
+  padding: 0 9px;
+  background: #ffffff;
+  color: #4b5563;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.layerToggles button span {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+}
+
+.layerToggles .activeLayer {
+  border-color: #0f766e;
+  background: #ecfdf5;
+  color: #0f766e;
+}
+
+.chartPrinciples {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 10px;
 }
 
 .analysisGrid {
@@ -581,6 +728,109 @@ h2 {
   align-self: start;
 }
 
+.anatomyPanel {
+  align-self: start;
+}
+
+.tradeStepper {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.tradeStepper button {
+  border: 1px solid #d6dae1;
+  border-radius: 8px;
+  background: #ffffff;
+  min-height: 34px;
+  cursor: pointer;
+  color: #374151;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.tradeStepper button:disabled {
+  cursor: default;
+  color: #9ca3af;
+  background: #f9fafb;
+}
+
+.tradeFocus {
+  border: 1px solid #cde5dc;
+  border-radius: 8px;
+  background: #f7faf8;
+  padding: 11px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 10px;
+  font-size: 13px;
+}
+
+.tradeFocus strong {
+  color: #0f766e;
+}
+
+.tradeFocus span {
+  color: #374151;
+  font-weight: 800;
+}
+
+.anatomyFlow {
+  display: grid;
+  gap: 8px;
+}
+
+.anatomyFlow div {
+  display: grid;
+  grid-template-columns: 26px minmax(0, 1fr);
+  column-gap: 8px;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  padding: 9px;
+}
+
+.anatomyFlow span {
+  width: 24px;
+  height: 24px;
+  grid-row: span 2;
+  display: grid;
+  place-items: center;
+  border-radius: 999px;
+  background: #eef2ff;
+  color: #3730a3;
+  font-size: 11px;
+  font-weight: 900;
+}
+
+.anatomyFlow strong {
+  color: #111827;
+  font-size: 13px;
+}
+
+.anatomyFlow p {
+  margin: 3px 0 0;
+  color: #6b7280;
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.emptyState {
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  background: #f9fafb;
+  padding: 14px;
+}
+
+.emptyState p {
+  margin: 6px 0 0;
+  color: #6b7280;
+  font-size: 13px;
+  line-height: 1.4;
+}
+
 .strategySummary {
   display: grid;
   gap: 8px;
@@ -819,9 +1069,14 @@ tbody tr:hover,
   .workspace,
   .workspace.lower,
   .analysisGrid,
+  .lessonShell,
   .homeGrid,
   .backtestLayout {
     grid-template-columns: 1fr;
+  }
+
+  .lessonBody {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .catalogGrid {
@@ -867,6 +1122,15 @@ tbody tr:hover,
 
   .metricStrip {
     grid-template-columns: repeat(2, 1fr);
+  }
+
+  .lessonBody,
+  .chartPrinciples {
+    grid-template-columns: 1fr;
+  }
+
+  .lessonRail {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .catalogGrid {

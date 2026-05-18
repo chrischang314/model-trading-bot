@@ -73,6 +73,72 @@ const DEFAULT_CUSTOM_STRATEGY: CustomStrategyConfig = {
 const PAGES = ["home", "stock", "signals", "backtesting"] as const;
 type Page = (typeof PAGES)[number];
 
+const SYSTEM_LESSON_STEPS = [
+  {
+    id: "data",
+    label: "Data",
+    principle: "Every trading model starts as a market data pipeline.",
+    mechanism: "The backend fetches daily bars, stores them through the storage adapter, and keeps a cached S&P 500 universe for ticker discovery.",
+    watch: "Bad inputs create convincing but useless signals, so production systems spend a lot of effort on validation, adjustment, and lineage."
+  },
+  {
+    id: "signals",
+    label: "Signals",
+    principle: "Indicators compress noisy price history into comparable features.",
+    mechanism: "The signal engine calculates trend, momentum, volatility, and volume fields, then stores the full matrix so each decision can be inspected later.",
+    watch: "A signal is not a trade by itself. It needs context, thresholds, and risk controls before it becomes a position."
+  },
+  {
+    id: "strategy",
+    label: "Strategy",
+    principle: "A strategy turns many indicators into a repeatable rule.",
+    mechanism: "Built-in and custom scorecards combine component scores into a long or cash stance, with a text reason attached to the latest decision.",
+    watch: "Simple rules are easier to explain and debug. Complexity should earn its seat."
+  },
+  {
+    id: "backtest",
+    label: "Backtest",
+    principle: "A backtest is a simulator for rules, timing, costs, and risk.",
+    mechanism: "Positions are applied on the next bar, fees and slippage are deducted, and equity is compared with a buy-and-hold benchmark.",
+    watch: "Great-looking historical returns can still be overfit, biased, or impossible to trade at scale."
+  },
+  {
+    id: "paper",
+    label: "Paper",
+    principle: "Paper trading connects a strategy to portfolio accounting without sending live orders.",
+    mechanism: "The paper engine creates a one-step allocation snapshot, showing intended orders, positions, cash, and mark-to-market equity.",
+    watch: "Execution, fills, borrow, taxes, outages, and limits are intentionally outside this toy app."
+  }
+] as const;
+type SystemLessonId = (typeof SYSTEM_LESSON_STEPS)[number]["id"];
+
+const PRICE_RANGE_OPTIONS = [
+  ["3M", 63],
+  ["6M", 126],
+  ["1Y", 252],
+  ["All", null]
+] as const;
+type PriceRangeLabel = (typeof PRICE_RANGE_OPTIONS)[number][0];
+
+const PRICE_LAYER_CONFIG = [
+  { key: "close", label: "Close", color: "#111827" },
+  { key: "sma20", label: "SMA 20", color: "#0f766e" },
+  { key: "sma50", label: "SMA 50", color: "#d97706" },
+  { key: "sma200", label: "SMA 200", color: "#4f46e5" },
+  { key: "bollinger", label: "Bollinger", color: "#be123c" },
+  { key: "keltner", label: "Keltner", color: "#64748b" },
+  { key: "position", label: "Position", color: "#10b981" }
+] as const;
+type PriceLayerKey = (typeof PRICE_LAYER_CONFIG)[number]["key"];
+
+const EQUITY_LAYER_CONFIG = [
+  { key: "equity", label: "Strategy", color: "#0f766e" },
+  { key: "benchmark", label: "Benchmark", color: "#64748b" },
+  { key: "drawdown", label: "Drawdown", color: "#dc2626" },
+  { key: "position", label: "Position", color: "#10b981" }
+] as const;
+type EquityLayerKey = (typeof EQUITY_LAYER_CONFIG)[number]["key"];
+
 const SIGNAL_MATRIX_COLUMNS = [
   ["signal_score", "Score"],
   ["trend_score", "Trend"],
@@ -184,18 +250,6 @@ export function App() {
     }
     return latestSignals.filter((row) => row.sym.includes(needle) || String(row.signal_reason ?? "").toUpperCase().includes(needle));
   }, [latestSignals, signalFilter]);
-  const priceDomain = useMemo<[number, number]>(() => {
-    const values = series
-      .flatMap((point) => [point.close, point.sma_20, point.sma_50, point.bb_upper, point.bb_lower, point.keltner_upper, point.keltner_lower])
-      .filter((value): value is number => typeof value === "number" && Number.isFinite(value));
-    if (!values.length) {
-      return [0, 1];
-    }
-    const min = Math.min(...values);
-    const max = Math.max(...values);
-    const padding = Math.max((max - min) * 0.06, max * 0.01);
-    return [Math.floor(min - padding), Math.ceil(max + padding)];
-  }, [series]);
 
   async function loadApp(symbol = selectedSymbol) {
     setAppLoading(true);
@@ -456,7 +510,6 @@ export function App() {
           selectedSymbol={selectedSymbol}
           series={series}
           strategy={strategy}
-          priceDomain={priceDomain}
           scoreTone={scoreTone}
         />
       ) : null}
@@ -528,6 +581,17 @@ function HomePage({
         <Metric icon={<Server size={18} />} label="Strategy" value={strategy?.label ?? "-"} />
       </section>
 
+      <SystemLearningPanel
+        latest={latest}
+        leaders={leaders}
+        overview={overview}
+        universe={universe}
+        strategy={strategy}
+        backtest={backtest}
+        paper={paper}
+        chooseSymbol={chooseSymbol}
+      />
+
       <section className="homeGrid">
         <div className="panel">
           <div className="panelHeader">
@@ -558,19 +622,94 @@ function HomePage({
   );
 }
 
+function SystemLearningPanel({
+  latest,
+  leaders,
+  overview,
+  universe,
+  strategy,
+  backtest,
+  paper,
+  chooseSymbol
+}: {
+  latest: OverviewRow | undefined;
+  leaders: OverviewRow[];
+  overview: OverviewRow[];
+  universe: UniverseResponse | null;
+  strategy: StrategyInfo | null;
+  backtest: BacktestResult | null;
+  paper: PaperSnapshot | null;
+  chooseSymbol: (symbol: string) => void;
+}) {
+  const [activeLesson, setActiveLesson] = useState<SystemLessonId>("data");
+  const lesson = SYSTEM_LESSON_STEPS.find((item) => item.id === activeLesson) ?? SYSTEM_LESSON_STEPS[0];
+  const readout = buildLessonReadout(activeLesson, { latest, leaders, overview, universe, strategy, backtest, paper });
+  const topSymbol = leaders[0]?.sym;
+
+  return (
+    <section className="panel learningPanel" data-testid="system-learning-panel">
+      <div className="panelHeader">
+        <div>
+          <h2>Trading System Walkthrough</h2>
+          <span>{lesson.label}</span>
+        </div>
+        {topSymbol ? (
+          <button className="commandButton compact" type="button" onClick={() => chooseSymbol(topSymbol)}>
+            Inspect {topSymbol}
+          </button>
+        ) : null}
+      </div>
+      <div className="lessonShell">
+        <div className="lessonRail" role="tablist" aria-label="Trading system stages">
+          {SYSTEM_LESSON_STEPS.map((step, index) => (
+            <button
+              key={step.id}
+              type="button"
+              role="tab"
+              aria-selected={activeLesson === step.id}
+              className={activeLesson === step.id ? "activeLesson" : ""}
+              onClick={() => setActiveLesson(step.id)}
+            >
+              <span>{index + 1}</span>
+              {step.label}
+            </button>
+          ))}
+        </div>
+        <div className="lessonBody">
+          <div className="lessonCard emphasis">
+            <span>Principle</span>
+            <strong>{lesson.principle}</strong>
+          </div>
+          <div className="lessonCard">
+            <span>Current readout</span>
+            <strong>{readout.primary}</strong>
+            <p>{readout.secondary}</p>
+          </div>
+          <div className="lessonCard">
+            <span>Mechanism</span>
+            <p>{lesson.mechanism}</p>
+          </div>
+          <div className="lessonCard">
+            <span>Risk Lens</span>
+            <p>{lesson.watch}</p>
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+}
+
 function StockPage({
   latest,
   selectedSymbol,
   series,
   strategy,
-  priceDomain,
   scoreTone
 }: {
   latest: OverviewRow | undefined;
   selectedSymbol: string;
   series: SignalPoint[];
   strategy: StrategyInfo | null;
-  priceDomain: [number, number];
   scoreTone: string;
 }) {
   return (
@@ -595,7 +734,7 @@ function StockPage({
             <h2>{selectedSymbol} Price</h2>
             <span>{latest ? pct.format(latest.period_return) : "-"}</span>
           </div>
-          <PriceChart series={series} priceDomain={priceDomain} />
+          <PriceChart series={series} latest={latest} />
         </div>
         <IndicatorChart title="MACD" value={fmt(latest?.macd_hist)}>
           <ComposedChart data={series} margin={{ top: 8, right: 8, bottom: 0, left: 0 }}>
@@ -948,6 +1087,8 @@ function BacktestingPage({
         </div>
       </div>
 
+      <BacktestAnatomyPanel backtest={backtest} />
+
       <div className="panel">
         <div className="panelHeader">
           <h2>Trade Log</h2>
@@ -993,6 +1134,83 @@ function BacktestingPage({
         <div className="reasonLine">{latest?.signal_reason ?? "-"}</div>
       </div>
     </section>
+  );
+}
+
+function BacktestAnatomyPanel({ backtest }: { backtest: BacktestResult | null }) {
+  const trades = backtest?.trades ?? [];
+  const [tradeIndex, setTradeIndex] = useState(0);
+  const safeIndex = trades.length ? Math.min(tradeIndex, trades.length - 1) : 0;
+  const trade = trades[safeIndex];
+  const curvePoint = backtest?.equity_curve.find((point) => point.date === trade?.date);
+  const worstDrawdown = (backtest?.equity_curve ?? []).reduce(
+    (worst, point) => (point.drawdown < worst.drawdown ? point : worst),
+    { date: "-", drawdown: 0, equity: 0, benchmark_equity: 0, position: 0 }
+  );
+
+  useEffect(() => {
+    setTradeIndex(Math.max(0, trades.length - 1));
+  }, [backtest?.symbol, trades.length]);
+
+  return (
+    <div className="panel anatomyPanel" data-testid="backtest-anatomy">
+      <div className="panelHeader">
+        <h2>Trade Anatomy</h2>
+        <span>{trades.length ? `${safeIndex + 1} / ${trades.length}` : "No trades"}</span>
+      </div>
+      {trade ? (
+        <>
+          <div className="tradeStepper">
+            <button type="button" onClick={() => setTradeIndex(Math.max(0, safeIndex - 1))} disabled={safeIndex === 0}>
+              Previous
+            </button>
+            <button type="button" onClick={() => setTradeIndex(Math.min(trades.length - 1, safeIndex + 1))} disabled={safeIndex >= trades.length - 1}>
+              Next
+            </button>
+          </div>
+          <div className="tradeFocus">
+            <strong>
+              {trade.side} {trade.sym}
+            </strong>
+            <span>{trade.date}</span>
+            <span>{money.format(trade.price)}</span>
+          </div>
+          <div className="anatomyFlow">
+            <div>
+              <span>1</span>
+              <strong>Signal Snapshot</strong>
+              <p>The rule state is read after the bar closes.</p>
+            </div>
+            <div>
+              <span>2</span>
+              <strong>Next-Bar Position</strong>
+              <p>The simulated trade changes exposure on the following observation.</p>
+            </div>
+            <div>
+              <span>3</span>
+              <strong>Cost Haircut</strong>
+              <p>Fees and slippage reduce the theoretical fill.</p>
+            </div>
+            <div>
+              <span>4</span>
+              <strong>Equity Mark</strong>
+              <p>Cash, position, and benchmark equity are reconciled.</p>
+            </div>
+          </div>
+          <div className="metricStrip slim">
+            <SmallMetric label="Trade Equity" value={money.format(trade.equity)} />
+            <SmallMetric label="Curve Equity" value={curvePoint ? money.format(curvePoint.equity) : "-"} />
+            <SmallMetric label="Position" value={trade.position ? "Long" : "Cash"} />
+            <SmallMetric label="Worst DD" value={`${pct.format(worstDrawdown.drawdown)} on ${worstDrawdown.date}`} />
+          </div>
+        </>
+      ) : (
+        <div className="emptyState">
+          <strong>No trade events yet</strong>
+          <p>The selected strategy stayed in one stance for the available history.</p>
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -1089,28 +1307,92 @@ function StrategyControlPanel({
   );
 }
 
-function PriceChart({ series, priceDomain }: { series: SignalPoint[]; priceDomain: [number, number] }) {
+function PriceChart({ series, latest }: { series: SignalPoint[]; latest: OverviewRow | undefined }) {
+  const [range, setRange] = useState<PriceRangeLabel>("1Y");
+  const [activeLayers, setActiveLayers] = useState<PriceLayerKey[]>(["close", "sma20", "sma50", "sma200", "position"]);
+  const activeLayerSet = useMemo(() => new Set(activeLayers), [activeLayers]);
+  const rangeDays = PRICE_RANGE_OPTIONS.find(([label]) => label === range)?.[1] ?? null;
+  const chartData = useMemo(() => (rangeDays == null ? series : series.slice(-rangeDays)), [rangeDays, series]);
+  const priceDomain = useMemo(() => buildPriceDomain(chartData, activeLayerSet), [activeLayerSet, chartData]);
+  const latestPoint = chartData[chartData.length - 1];
+  const trendState =
+    latest?.close != null && latest?.sma_20 != null ? (latest.close >= latest.sma_20 ? "Above SMA 20" : "Below SMA 20") : "Trend pending";
+  const momentumState =
+    typeof latest?.rsi_14 === "number" ? (latest.rsi_14 >= 70 ? "RSI overbought" : latest.rsi_14 <= 30 ? "RSI oversold" : "RSI neutral") : "RSI pending";
+  const positionState = latestPoint?.position ? "Long exposure" : "Cash stance";
+
+  function toggleLayer(key: PriceLayerKey) {
+    setActiveLayers((current) => {
+      if (current.includes(key)) {
+        return current.length === 1 ? current : current.filter((item) => item !== key);
+      }
+      return [...current, key];
+    });
+  }
+
   return (
-    <div className="chartBox tall">
-      <ResponsiveContainer>
-        <ComposedChart data={series} margin={{ top: 12, right: 12, bottom: 4, left: 0 }}>
-          <CartesianGrid stroke="#e6e8ec" vertical={false} />
-          <XAxis dataKey="date" minTickGap={32} tickLine={false} axisLine={false} />
-          <YAxis width={72} tickFormatter={(value) => money.format(Number(value))} tickLine={false} axisLine={false} domain={priceDomain} />
-          <Tooltip formatter={(value) => (typeof value === "number" ? value.toFixed(2) : value)} />
-          <Line type="monotone" dataKey="close" stroke="#111827" strokeWidth={2} dot={false} />
-          <Line type="monotone" dataKey="sma_20" stroke="#0f9f9a" strokeWidth={1.7} dot={false} />
-          <Line type="monotone" dataKey="sma_50" stroke="#d97706" strokeWidth={1.7} dot={false} />
-          <Line type="monotone" dataKey="sma_200" stroke="#6366f1" strokeWidth={1.5} dot={false} />
-          <Line type="monotone" dataKey="bb_upper" stroke="#94a3b8" strokeWidth={1} dot={false} strokeDasharray="4 4" />
-          <Line type="monotone" dataKey="bb_lower" stroke="#94a3b8" strokeWidth={1} dot={false} strokeDasharray="4 4" />
-          <Line type="monotone" dataKey="keltner_upper" stroke="#cbd5e1" strokeWidth={1} dot={false} strokeDasharray="2 3" />
-          <Line type="monotone" dataKey="keltner_lower" stroke="#cbd5e1" strokeWidth={1} dot={false} strokeDasharray="2 3" />
-          <Line type="stepAfter" dataKey="position" yAxisId="position" stroke="#10b981" strokeWidth={1.4} dot={false} />
-          <YAxis yAxisId="position" orientation="right" hide domain={[0, 8]} />
-        </ComposedChart>
-      </ResponsiveContainer>
-    </div>
+    <>
+      <div className="chartControlBar" data-testid="price-chart-controls">
+        <div className="segmentedControl">
+          {PRICE_RANGE_OPTIONS.map(([label]) => (
+            <button key={label} type="button" className={range === label ? "activeSegment" : ""} onClick={() => setRange(label)}>
+              {label}
+            </button>
+          ))}
+        </div>
+        <div className="layerToggles">
+          {PRICE_LAYER_CONFIG.map((layer) => (
+            <button
+              key={layer.key}
+              type="button"
+              className={activeLayerSet.has(layer.key) ? "activeLayer" : ""}
+              onClick={() => toggleLayer(layer.key)}
+            >
+              <span style={{ backgroundColor: layer.color }} />
+              {layer.label}
+            </button>
+          ))}
+        </div>
+      </div>
+      <div className="chartBox tall interactiveChart" data-testid="price-chart">
+        <ResponsiveContainer>
+          <ComposedChart data={chartData} margin={{ top: 12, right: 12, bottom: 0, left: 0 }}>
+            <CartesianGrid stroke="#e6e8ec" vertical={false} />
+            <XAxis dataKey="date" minTickGap={32} tickLine={false} axisLine={false} />
+            <YAxis width={72} tickFormatter={(value) => money.format(Number(value))} tickLine={false} axisLine={false} domain={priceDomain} />
+            <YAxis yAxisId="position" orientation="right" hide domain={[0, 8]} />
+            <Tooltip content={<PriceTooltip />} />
+            <Legend verticalAlign="top" height={32} />
+            {activeLayerSet.has("close") ? <Line type="monotone" dataKey="close" name="Close" stroke="#111827" strokeWidth={2.2} dot={false} isAnimationActive={false} /> : null}
+            {activeLayerSet.has("sma20") ? <Line type="monotone" dataKey="sma_20" name="SMA 20" stroke="#0f766e" strokeWidth={1.8} dot={false} isAnimationActive={false} /> : null}
+            {activeLayerSet.has("sma50") ? <Line type="monotone" dataKey="sma_50" name="SMA 50" stroke="#d97706" strokeWidth={1.8} dot={false} isAnimationActive={false} /> : null}
+            {activeLayerSet.has("sma200") ? <Line type="monotone" dataKey="sma_200" name="SMA 200" stroke="#4f46e5" strokeWidth={1.5} dot={false} isAnimationActive={false} /> : null}
+            {activeLayerSet.has("bollinger") ? (
+              <>
+                <Line type="monotone" dataKey="bb_upper" name="Bollinger Upper" stroke="#be123c" strokeWidth={1} dot={false} strokeDasharray="4 4" isAnimationActive={false} />
+                <Line type="monotone" dataKey="bb_lower" name="Bollinger Lower" stroke="#be123c" strokeWidth={1} dot={false} strokeDasharray="4 4" isAnimationActive={false} />
+              </>
+            ) : null}
+            {activeLayerSet.has("keltner") ? (
+              <>
+                <Line type="monotone" dataKey="keltner_upper" name="Keltner Upper" stroke="#64748b" strokeWidth={1} dot={false} strokeDasharray="2 3" isAnimationActive={false} />
+                <Line type="monotone" dataKey="keltner_lower" name="Keltner Lower" stroke="#64748b" strokeWidth={1} dot={false} strokeDasharray="2 3" isAnimationActive={false} />
+              </>
+            ) : null}
+            {activeLayerSet.has("position") ? (
+              <Line yAxisId="position" type="stepAfter" dataKey="position" name="Position" stroke="#10b981" strokeWidth={1.6} dot={false} isAnimationActive={false} />
+            ) : null}
+            <Brush dataKey="date" height={28} stroke="#0f766e" travellerWidth={10} />
+          </ComposedChart>
+        </ResponsiveContainer>
+      </div>
+      <div className="chartPrinciples">
+        <SmallMetric label="Trend Filter" value={trendState} />
+        <SmallMetric label="Momentum State" value={momentumState} />
+        <SmallMetric label="Model Stance" value={positionState} />
+        <SmallMetric label="Visible Bars" value={compact.format(chartData.length)} />
+      </div>
+    </>
   );
 }
 
@@ -1193,19 +1475,64 @@ function AlgorithmPanel({ latest, strategy }: { latest: OverviewRow | undefined;
 }
 
 function EquityChart({ backtest, compactMode = false }: { backtest: BacktestResult | null; compactMode?: boolean }) {
+  const [activeLayers, setActiveLayers] = useState<EquityLayerKey[]>(compactMode ? ["equity", "benchmark"] : ["equity", "benchmark", "drawdown"]);
+  const activeLayerSet = useMemo(() => new Set(activeLayers), [activeLayers]);
+
+  function toggleLayer(key: EquityLayerKey) {
+    setActiveLayers((current) => {
+      if (current.includes(key)) {
+        return current.length === 1 ? current : current.filter((item) => item !== key);
+      }
+      return [...current, key];
+    });
+  }
+
   return (
-    <div className={`chartBox ${compactMode ? "" : "tall"}`}>
-      <ResponsiveContainer>
-        <LineChart data={backtest?.equity_curve ?? []} margin={{ top: 8, right: 8, bottom: 0, left: 0 }}>
-          <CartesianGrid stroke="#e6e8ec" vertical={false} />
-          <XAxis dataKey="date" minTickGap={32} tickLine={false} axisLine={false} />
-          <YAxis width={70} tickFormatter={(value) => compact.format(value)} tickLine={false} axisLine={false} />
-          <Tooltip formatter={(value) => (typeof value === "number" ? money.format(value) : value)} />
-          <Line type="monotone" dataKey="equity" stroke="#0f766e" strokeWidth={2} dot={false} />
-          <Line type="monotone" dataKey="benchmark_equity" stroke="#6b7280" strokeWidth={1.7} dot={false} />
-        </LineChart>
-      </ResponsiveContainer>
-    </div>
+    <>
+      {!compactMode ? (
+        <div className="chartControlBar">
+          <div className="layerToggles">
+            {EQUITY_LAYER_CONFIG.map((layer) => (
+              <button
+                key={layer.key}
+                type="button"
+                className={activeLayerSet.has(layer.key) ? "activeLayer" : ""}
+                onClick={() => toggleLayer(layer.key)}
+              >
+                <span style={{ backgroundColor: layer.color }} />
+                {layer.label}
+              </button>
+            ))}
+          </div>
+        </div>
+      ) : null}
+      <div className={`chartBox ${compactMode ? "" : "tall interactiveChart"}`} data-testid={compactMode ? undefined : "equity-chart"}>
+        <ResponsiveContainer>
+          <LineChart data={backtest?.equity_curve ?? []} margin={{ top: 8, right: 8, bottom: compactMode ? 0 : 2, left: 0 }}>
+            <CartesianGrid stroke="#e6e8ec" vertical={false} />
+            <XAxis dataKey="date" minTickGap={32} tickLine={false} axisLine={false} />
+            <YAxis yAxisId="equity" width={70} tickFormatter={(value) => compact.format(value)} tickLine={false} axisLine={false} />
+            {activeLayerSet.has("drawdown") ? <YAxis yAxisId="drawdown" orientation="right" width={54} tickFormatter={(value) => pct.format(Number(value))} tickLine={false} axisLine={false} /> : null}
+            <YAxis yAxisId="position" orientation="right" hide domain={[0, 8]} />
+            <Tooltip
+              formatter={(value, name) => {
+                if (name === "Drawdown") return pct.format(Number(value));
+                if (name === "Position") return Number(value) ? "Long" : "Cash";
+                return typeof value === "number" ? money.format(value) : value;
+              }}
+            />
+            {!compactMode ? <Legend verticalAlign="top" height={30} /> : null}
+            {activeLayerSet.has("equity") ? <Line yAxisId="equity" type="monotone" dataKey="equity" name="Strategy" stroke="#0f766e" strokeWidth={2} dot={false} isAnimationActive={false} /> : null}
+            {activeLayerSet.has("benchmark") ? (
+              <Line yAxisId="equity" type="monotone" dataKey="benchmark_equity" name="Benchmark" stroke="#64748b" strokeWidth={1.7} dot={false} isAnimationActive={false} />
+            ) : null}
+            {activeLayerSet.has("drawdown") ? <Line yAxisId="drawdown" type="monotone" dataKey="drawdown" name="Drawdown" stroke="#dc2626" strokeWidth={1.4} dot={false} isAnimationActive={false} /> : null}
+            {activeLayerSet.has("position") ? <Line yAxisId="position" type="stepAfter" dataKey="position" name="Position" stroke="#10b981" strokeWidth={1.4} dot={false} isAnimationActive={false} /> : null}
+            {!compactMode ? <Brush dataKey="date" height={28} stroke="#0f766e" travellerWidth={10} /> : null}
+          </LineChart>
+        </ResponsiveContainer>
+      </div>
+    </>
   );
 }
 
@@ -1259,6 +1586,111 @@ function SmallMetric({ label, value }: { label: string; value: string }) {
       <strong>{value}</strong>
     </div>
   );
+}
+
+function PriceTooltip({
+  active,
+  label,
+  payload
+}: {
+  active?: boolean;
+  label?: string;
+  payload?: Array<{ color?: string; dataKey?: string; name?: string; value?: number; payload?: SignalPoint }>;
+}) {
+  if (!active || !payload?.length) {
+    return null;
+  }
+  const row = payload[0]?.payload;
+  return (
+    <div className="trendTooltip">
+      <strong>{label}</strong>
+      {payload
+        .filter((item) => item.dataKey && item.dataKey !== "position")
+        .slice(0, 8)
+        .map((item) => (
+          <span key={String(item.dataKey)}>
+            <i style={{ backgroundColor: item.color ?? "#111827" }} />
+            {item.name ?? item.dataKey}: {typeof item.value === "number" ? money.format(item.value) : "-"}
+          </span>
+        ))}
+      {row ? (
+        <>
+          <span>Signal: {row.trade_signal ?? "-"}</span>
+          <span>Score: {formatSignalValue("signal_score", row.signal_score)}</span>
+          <span>Position: {row.position ? "Long" : "Cash"}</span>
+          <span>Volume: {typeof row.volume === "number" ? compact.format(row.volume) : "-"}</span>
+        </>
+      ) : null}
+    </div>
+  );
+}
+
+function buildPriceDomain(data: SignalPoint[], activeLayers: Set<PriceLayerKey>): [number, number] {
+  const values: number[] = [];
+  for (const point of data) {
+    if (activeLayers.has("close")) values.push(...finiteValues([point.close]));
+    if (activeLayers.has("sma20")) values.push(...finiteValues([point.sma_20]));
+    if (activeLayers.has("sma50")) values.push(...finiteValues([point.sma_50]));
+    if (activeLayers.has("sma200")) values.push(...finiteValues([point.sma_200]));
+    if (activeLayers.has("bollinger")) values.push(...finiteValues([point.bb_upper, point.bb_lower]));
+    if (activeLayers.has("keltner")) values.push(...finiteValues([point.keltner_upper, point.keltner_lower]));
+  }
+  if (!values.length) {
+    return [0, 1];
+  }
+  const min = Math.min(...values);
+  const max = Math.max(...values);
+  const padding = Math.max((max - min) * 0.07, max * 0.01, 1);
+  return [Math.floor(min - padding), Math.ceil(max + padding)];
+}
+
+function finiteValues(values: Array<SignalValue | undefined>) {
+  return values.filter((value): value is number => typeof value === "number" && Number.isFinite(value));
+}
+
+function buildLessonReadout(
+  lesson: SystemLessonId,
+  context: {
+    latest: OverviewRow | undefined;
+    leaders: OverviewRow[];
+    overview: OverviewRow[];
+    universe: UniverseResponse | null;
+    strategy: StrategyInfo | null;
+    backtest: BacktestResult | null;
+    paper: PaperSnapshot | null;
+  }
+) {
+  const top = context.leaders[0];
+  if (lesson === "data") {
+    return {
+      primary: `${context.overview.length} watched tickers, ${context.universe ? compact.format(context.universe.count) : "-"} cached listings`,
+      secondary: context.universe?.as_of ? `Universe cache refreshed ${new Date(context.universe.as_of).toLocaleString()}` : "Universe cache is not available yet."
+    };
+  }
+  if (lesson === "signals") {
+    return {
+      primary: top ? `${top.sym} leads with score ${fmt(top.signal_score)}` : "Signals pending",
+      secondary: top?.signal_reason ?? "Load or ingest market data to calculate signal rows."
+    };
+  }
+  if (lesson === "strategy") {
+    return {
+      primary: context.strategy?.label ?? "Strategy pending",
+      secondary: context.strategy?.position_rule ?? context.latest?.signal_reason ?? "Select a strategy to see the active rule."
+    };
+  }
+  if (lesson === "backtest") {
+    return {
+      primary: context.backtest ? `${pct.format(context.backtest.metrics.total_return ?? 0)} strategy return` : "Backtest pending",
+      secondary: context.backtest
+        ? `${pct.format(context.backtest.metrics.benchmark_return ?? 0)} benchmark, ${pct.format(context.backtest.metrics.max_drawdown ?? 0)} max drawdown`
+        : "Run a symbol backtest to compare rules against buy-and-hold."
+    };
+  }
+  return {
+    primary: context.paper ? money.format(context.paper.equity) : "Paper account pending",
+    secondary: context.paper ? `${context.paper.orders.length} intended orders and ${context.paper.positions.length} open positions` : "Paper trading creates orders without live execution."
+  };
 }
 
 function SignalTrendTooltip({
