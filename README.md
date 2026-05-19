@@ -52,6 +52,12 @@ The backend also has a local CSV storage adapter so tests and UI development can
 $env:STORAGE_BACKEND="local"
 ```
 
+## Shared Local Login
+
+`model-trading-bot` uses a lightweight shared SQLite login database for local apps. Set `SHARED_AUTH_DB` to the same file path in `model-trading-bot`, `local-llm`, and `trading-bot`; without an override it defaults to `~/.local-webapps/auth.db` for non-container local runs.
+
+The current login is intentionally username-only to match the existing `local-llm` flow. It is suitable for a trusted local lab, not public deployment. The numeric `user_id` from this shared database is used to scope model-trading-bot saved scorecards and paper portfolio snapshots.
+
 ## Quick Start
 
 ```powershell
@@ -88,6 +94,9 @@ pnpm run dev -- --host 127.0.0.1 --port 5173
 
 The dashboard calls:
 
+- `POST /api/auth/login`, `GET /api/auth/me`, and `GET /api/user/state` for the shared local user.
+- `POST /api/user/strategies` and `GET /api/user/strategies` for per-user saved scorecard strategies.
+- `POST /api/user/account/reset` to reset a model-trading-bot account back to default paper/account state.
 - `GET /api/symbols` to list default and stored symbols.
 - `POST /api/symbols` to add and ingest new tickers.
 - `GET /api/universe/sp500` and `POST /api/universe/sp500/refresh` to view or re-poll S&P 500 constituents.
@@ -98,7 +107,7 @@ The dashboard calls:
 - `GET /api/overview` for latest cross-symbol state.
 - `GET /api/timeseries/{symbol}` for price, indicator, position, and signal-trend chart data.
 - `POST /api/backtests` for the selected long/cash strategy.
-- `POST /api/paper/run` for a one-step paper account snapshot using the selected strategy.
+- `POST /api/paper/run` and `GET /api/paper/portfolio` for a user-scoped paper account snapshot using the selected strategy.
 
 Default watched symbols are `AAPL,AMZN,META,NFLX,GOOGL`. The S&P 500 universe is cached separately and periodically refreshed with `SP500_REFRESH_HOURS` so ticker discovery does not require fetching price history for all 500+ listings on every page load.
 
@@ -107,7 +116,7 @@ Default watched symbols are `AAPL,AMZN,META,NFLX,GOOGL`. The S&P 500 universe is
 The toy strategy layer is intentionally simple but now supports a strategy registry:
 
 - Built-in strategies: balanced scorecard, trend breakout, mean reversion, time-series momentum, and low-volatility trend.
-- Custom strategy: a constrained scorecard builder with score, RSI, SMA 20, MACD, ADX, and momentum filters.
+- Custom strategy: a constrained scorecard builder with score, RSI, SMA 20, MACD, ADX, and momentum filters; signed-in users can save named scorecards and select them from the global strategy menu.
 - Shared indicators: SMA/EMA, MACD, ADX/+DI/-DI, Donchian, RSI, stochastic, Williams %R, CCI, Bollinger Bands, Keltner Channels, ATR, realized volatility, OBV, volume z-score, rolling VWAP, 20-day momentum, and 12-1 month momentum.
 - Home page walkthrough: an interactive stage explorer that connects data ingestion, signal calculation, strategy rules, backtesting, and paper trading to the current app state.
 - Stock page chart controls: range selection, layer toggles, brush zoom, hover tooltips, and principle cards for trend, momentum, model stance, and visible bars.

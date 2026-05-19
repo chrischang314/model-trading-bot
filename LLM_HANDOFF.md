@@ -63,6 +63,7 @@ Key modules:
 - `backend/app/services/data_provider.py`: `YFinanceProvider`, `StooqProvider`, `FallbackProvider`.
 - `backend/app/services/signals.py`: trend, momentum, volatility, and volume indicators plus a transparent scorecard.
 - `backend/app/services/strategies.py`: built-in strategy registry, custom scorecard normalization, and dynamic strategy application.
+- `backend/app/services/auth.py`: shared local SQLite login store plus model-trading-bot user profiles, saved scorecards, and paper portfolio snapshots.
 - `backend/app/services/backtest.py`: long/cash backtest with fee/slippage, equity curve, drawdown, Sharpe, trades.
 - `backend/app/services/paper.py`: one-step paper portfolio allocation from latest signals.
 - `backend/app/storage/local.py`: CSV storage adapter for local/dev/test use.
@@ -71,6 +72,13 @@ Key modules:
 Main API routes:
 
 - `GET /health`
+- `POST /api/auth/login`
+- `GET /api/auth/me`
+- `GET /api/user/state`
+- `GET /api/user/strategies`
+- `POST /api/user/strategies`
+- `DELETE /api/user/strategies/{strategy_id}`
+- `POST /api/user/account/reset`
 - `GET /api/symbols`
 - `POST /api/symbols`
 - `POST /api/ingest`
@@ -85,6 +93,7 @@ Main API routes:
 - `GET /api/timeseries/{symbol}`
 - `POST /api/backtests`
 - `POST /api/paper/run`
+- `GET /api/paper/portfolio`
 
 Default watched symbols:
 
@@ -100,12 +109,20 @@ Strategy layer:
 
 - `backend/app/services/signals.py` calculates shared indicator columns and base component scores.
 - `backend/app/services/strategies.py` dynamically applies a selected strategy to those stored indicator columns.
+- `backend/app/services/auth.py` stores saved user scorecards as `user_strategy_{id}` entries in the same strategy list returned by `GET /api/strategies`.
 - Built-ins: `multi_factor_scorecard`, `trend_breakout`, `mean_reversion`, `momentum_rotation`, `low_volatility_trend`.
 - Custom: `custom_scorecard`, a validated rule template with score, RSI, SMA 20, MACD, ADX, and momentum filters.
 - GET endpoints accept `strategy_id` query params; custom GET usage also accepts `custom_name`, `min_signal_score`, `max_rsi`, `min_rsi`, `require_above_sma20`, `require_positive_macd`, `min_adx`, and `min_momentum_score`.
 - `POST /api/backtests` and `POST /api/paper/run` accept `strategy_id` and `custom_strategy` in the request body.
 - Position is shifted one bar in the backtest to reduce lookahead bias.
 - `signal_reason` stores a compact text explanation for the latest component scores.
+
+Shared auth:
+
+- Local username-only auth is backed by SQLite at `SHARED_AUTH_DB`, defaulting to `~/.local-webapps/auth.db` outside containers.
+- The shared table is `users`; model-trading-bot owns app-specific tables prefixed with `model_trading_bot_`.
+- `local-llm` and `trading-bot` were updated in sibling repos to use the same `SHARED_AUTH_DB` convention.
+- Frontend localStorage uses `sharedLocalUser` plus an app-specific fallback key.
 
 ## KDB Details
 

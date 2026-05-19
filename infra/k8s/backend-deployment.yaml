@@ -1,4 +1,15 @@
 apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: backend-data
+  namespace: model-trading-bot
+spec:
+  accessModes: ["ReadWriteOnce"]
+  resources:
+    requests:
+      storage: 1Gi
+---
+apiVersion: v1
 kind: Service
 metadata:
   name: backend
@@ -35,6 +46,9 @@ spec:
           envFrom:
             - configMapRef:
                 name: trading-bot-config
+          volumeMounts:
+            - name: backend-data
+              mountPath: /app/data
           readinessProbe:
             httpGet:
               path: /health
@@ -47,4 +61,7 @@ spec:
               port: 8000
             initialDelaySeconds: 20
             periodSeconds: 20
-
+      volumes:
+        - name: backend-data
+          persistentVolumeClaim:
+            claimName: backend-data

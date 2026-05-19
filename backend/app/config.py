@@ -28,6 +28,7 @@ class Settings:
     kdb_username: str | None = os.getenv("KDB_USERNAME")
     kdb_password: str | None = os.getenv("KDB_PASSWORD")
     local_data_dir: Path = Path(os.getenv("LOCAL_DATA_DIR", "data")).resolve()
+    shared_auth_db: Path = Path(os.getenv("SHARED_AUTH_DB", str(Path.home() / ".local-webapps" / "auth.db"))).expanduser().resolve()
     bootstrap_on_startup: bool = _bool_env("BOOTSTRAP_ON_STARTUP", False)
     auto_ingest_on_empty: bool = _bool_env("AUTO_INGEST_ON_EMPTY", True)
     sp500_refresh_hours: int = int(os.getenv("SP500_REFRESH_HOURS", "24"))

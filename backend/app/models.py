@@ -25,6 +25,10 @@ class SymbolRequest(BaseModel):
     period: str = Field(default="2y", description="Provider period used when adding the symbol.")
 
 
+class LoginRequest(BaseModel):
+    username: str
+
+
 class CustomStrategyRequest(BaseModel):
     name: str = "Custom scorecard"
     min_signal_score: float = 5.0
@@ -52,6 +56,15 @@ class PaperRequest(BaseModel):
     cash: float = 100_000
     strategy_id: str = "multi_factor_scorecard"
     custom_strategy: CustomStrategyRequest | None = None
+
+
+class SaveStrategyRequest(BaseModel):
+    strategy: CustomStrategyRequest
+
+
+class ResetAccountResponse(BaseModel):
+    ok: bool
+    data: Any
 
 
 class ApiEnvelope(BaseModel):

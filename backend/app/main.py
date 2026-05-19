@@ -4,16 +4,17 @@ import asyncio
 from datetime import date
 
 import pandas as pd
-from fastapi import Depends, FastAPI, HTTPException, Query
+from fastapi import Depends, FastAPI, Header, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import settings
-from app.models import ApiEnvelope, BacktestRequest, IngestRequest, IngestResponse, PaperRequest, SymbolRequest
+from app.models import ApiEnvelope, BacktestRequest, IngestRequest, IngestResponse, LoginRequest, PaperRequest, SaveStrategyRequest, SymbolRequest
+from app.services.auth import SharedAuthStore
 from app.services.backtest import run_long_cash_backtest
 from app.services.data_provider import create_provider
 from app.services.paper import run_paper_snapshot
 from app.services.signals import SIGNAL_CATALOG, calculate_signals
-from app.services.strategies import DEFAULT_STRATEGY_ID, apply_strategy, get_strategy_metadata, list_strategies
+from app.services.strategies import CUSTOM_STRATEGY_ID, DEFAULT_STRATEGY_ID, apply_strategy, get_strategy_metadata, list_strategies
 from app.services.universe import SP500UniverseService
 from app.storage import create_storage
 from app.utils import clean_records, normalize_symbols
@@ -30,7 +31,22 @@ app.add_middleware(
 
 provider = create_provider(settings.data_provider)
 storage = create_storage(settings)
+auth_store = SharedAuthStore(settings.shared_auth_db)
 universe_service = SP500UniverseService(settings.local_data_dir / "universe" / "sp500.json", settings.sp500_refresh_hours)
+
+
+def _current_user(
+    x_user_id: int | None = Header(default=None, alias="X-User-Id"),
+    user_id: int | None = Query(default=None),
+) -> dict:
+    requested_id = x_user_id or user_id
+    if requested_id:
+        user = auth_store.get_user(requested_id)
+        if not user:
+            raise HTTPException(status_code=401, detail="Unknown local user. Sign in again.")
+        auth_store.ensure_model_profile(user["id"])
+        return user
+    return auth_store.get_or_create_user("demo")
 
 
 def _strategy_context(
@@ -43,8 +59,18 @@ def _strategy_context(
     require_positive_macd: bool = Query(default=False),
     min_adx: float | None = Query(default=None),
     min_momentum_score: float | None = Query(default=None),
+    current_user: dict = Depends(_current_user),
 ) -> tuple[str, dict | None]:
     custom_strategy = None
+    if strategy_id.startswith("user_strategy_"):
+        try:
+            saved_strategy_id = int(strategy_id.removeprefix("user_strategy_"))
+        except ValueError as exc:
+            raise HTTPException(status_code=404, detail=f"Unknown saved strategy: {strategy_id}") from exc
+        saved = auth_store.get_user_strategy(current_user["id"], saved_strategy_id)
+        if not saved:
+            raise HTTPException(status_code=404, detail=f"Unknown saved strategy: {strategy_id}")
+        return CUSTOM_STRATEGY_ID, saved["config"]
     if strategy_id == "custom_scorecard":
         custom_strategy = {
             "name": custom_name,
@@ -61,6 +87,7 @@ def _strategy_context(
 
 @app.on_event("startup")
 async def bootstrap() -> None:
+    auth_store.init()
     if settings.universe_refresh_on_startup:
         asyncio.create_task(_refresh_universe_periodically())
     if settings.bootstrap_on_startup:
@@ -77,7 +104,55 @@ def health() -> dict:
         status["storage"] = storage.health()
     except Exception as exc:
         status["storage"] = {"ok": False, "error": str(exc)}
+    try:
+        auth_store.init()
+        status["auth"] = {"ok": True, "db": str(settings.shared_auth_db)}
+    except Exception as exc:
+        status["auth"] = {"ok": False, "error": str(exc)}
     return status
+
+
+@app.post("/api/auth/login", response_model=ApiEnvelope)
+def auth_login(request: LoginRequest) -> ApiEnvelope:
+    try:
+        user = auth_store.get_or_create_user(request.username)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return ApiEnvelope(data={"user": user, **auth_store.user_state(user["id"])})
+
+
+@app.get("/api/auth/me", response_model=ApiEnvelope)
+def auth_me(current_user: dict = Depends(_current_user)) -> ApiEnvelope:
+    return ApiEnvelope(data={"user": current_user, **auth_store.user_state(current_user["id"])})
+
+
+@app.get("/api/user/state", response_model=ApiEnvelope)
+def user_state(current_user: dict = Depends(_current_user)) -> ApiEnvelope:
+    return ApiEnvelope(data={"user": current_user, **auth_store.user_state(current_user["id"])})
+
+
+@app.get("/api/user/strategies", response_model=ApiEnvelope)
+def user_strategies(current_user: dict = Depends(_current_user)) -> ApiEnvelope:
+    return ApiEnvelope(data=[_saved_strategy_metadata(item) for item in auth_store.list_user_strategies(current_user["id"])])
+
+
+@app.post("/api/user/strategies", response_model=ApiEnvelope)
+def save_user_strategy(request: SaveStrategyRequest, current_user: dict = Depends(_current_user)) -> ApiEnvelope:
+    saved = auth_store.save_user_strategy(current_user["id"], request.strategy.model_dump())
+    return ApiEnvelope(data=_saved_strategy_metadata(saved))
+
+
+@app.delete("/api/user/strategies/{strategy_id}", response_model=ApiEnvelope)
+def delete_user_strategy(strategy_id: int, current_user: dict = Depends(_current_user)) -> ApiEnvelope:
+    deleted = auth_store.delete_user_strategy(current_user["id"], strategy_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Saved strategy not found")
+    return ApiEnvelope(data={"ok": True, "strategies": auth_store.list_user_strategies(current_user["id"])})
+
+
+@app.post("/api/user/account/reset", response_model=ApiEnvelope)
+def reset_user_account(current_user: dict = Depends(_current_user)) -> ApiEnvelope:
+    return ApiEnvelope(data={"user": current_user, **auth_store.reset_model_account(current_user["id"])})
 
 
 @app.get("/api/symbols", response_model=ApiEnvelope)
@@ -94,8 +169,9 @@ def add_symbols(request: SymbolRequest) -> IngestResponse:
 
 
 @app.get("/api/strategies", response_model=ApiEnvelope)
-def strategies() -> ApiEnvelope:
-    return ApiEnvelope(data=list_strategies())
+def strategies(current_user: dict = Depends(_current_user)) -> ApiEnvelope:
+    saved = [_saved_strategy_metadata(item) for item in auth_store.list_user_strategies(current_user["id"])]
+    return ApiEnvelope(data=[*list_strategies(), *saved])
 
 
 @app.get("/api/strategy", response_model=ApiEnvelope)
@@ -215,14 +291,15 @@ def timeseries(
 
 
 @app.post("/api/backtests", response_model=ApiEnvelope)
-def backtest(request: BacktestRequest) -> ApiEnvelope:
+def backtest(request: BacktestRequest, current_user: dict = Depends(_current_user)) -> ApiEnvelope:
     symbol = normalize_symbols([request.symbol])[0]
     signals = storage.get_signals(symbols=[symbol], start=request.start, end=request.end)
     if signals.empty and settings.auto_ingest_on_empty:
         run_ingestion(IngestRequest(symbols=[symbol], start=request.start, end=request.end))
         signals = storage.get_signals(symbols=[symbol], start=request.start, end=request.end)
     custom_strategy = request.custom_strategy.model_dump() if request.custom_strategy else None
-    signals = apply_strategy(signals, request.strategy_id, custom_strategy)
+    strategy_id, custom_strategy, metadata = _resolve_requested_strategy(request.strategy_id, custom_strategy, current_user)
+    signals = apply_strategy(signals, strategy_id, custom_strategy)
     try:
         result = run_long_cash_backtest(
             signals,
@@ -238,17 +315,25 @@ def backtest(request: BacktestRequest) -> ApiEnvelope:
             "metrics": result.metrics,
             "equity_curve": clean_records(result.equity_curve),
             "trades": clean_records(result.trades),
-            "strategy": get_strategy_metadata(request.strategy_id, custom_strategy),
+            "strategy": metadata,
         }
     )
 
 
 @app.post("/api/paper/run", response_model=ApiEnvelope)
-def paper(request: PaperRequest) -> ApiEnvelope:
+def paper(request: PaperRequest, current_user: dict = Depends(_current_user)) -> ApiEnvelope:
     symbols = normalize_symbols(request.symbols or settings.default_symbols)
     custom_strategy = request.custom_strategy.model_dump() if request.custom_strategy else None
-    signals = _signals_or_bootstrap(symbols, request.strategy_id, custom_strategy)
-    return ApiEnvelope(data=run_paper_snapshot(signals, request.cash))
+    strategy_id, custom_strategy, _ = _resolve_requested_strategy(request.strategy_id, custom_strategy, current_user)
+    signals = _signals_or_bootstrap(symbols, strategy_id, custom_strategy)
+    snapshot = run_paper_snapshot(signals, request.cash)
+    auth_store.save_paper_portfolio(current_user["id"], snapshot, request.cash, request.strategy_id, custom_strategy)
+    return ApiEnvelope(data=snapshot)
+
+
+@app.get("/api/paper/portfolio", response_model=ApiEnvelope)
+def paper_portfolio(current_user: dict = Depends(_current_user)) -> ApiEnvelope:
+    return ApiEnvelope(data=auth_store.get_paper_portfolio(current_user["id"]))
 
 
 def run_ingestion(request: IngestRequest) -> IngestResponse:
@@ -286,6 +371,37 @@ def _available_symbols() -> list[str]:
     except Exception:
         stored_symbols = []
     return normalize_symbols([*settings.default_symbols, *stored_symbols])
+
+
+def _saved_strategy_metadata(saved: dict) -> dict:
+    metadata = get_strategy_metadata(CUSTOM_STRATEGY_ID, saved["config"])
+    metadata["id"] = saved["strategy_id"]
+    metadata["name"] = saved["name"]
+    metadata["label"] = saved["label"]
+    metadata["kind"] = "custom"
+    metadata["saved_strategy_id"] = saved["id"]
+    metadata["updated_at"] = saved["updated_at"]
+    return metadata
+
+
+def _resolve_requested_strategy(
+    strategy_id: str,
+    custom_strategy: dict | None,
+    current_user: dict,
+) -> tuple[str, dict | None, dict]:
+    if strategy_id.startswith("user_strategy_"):
+        try:
+            saved_strategy_id = int(strategy_id.removeprefix("user_strategy_"))
+        except ValueError as exc:
+            raise HTTPException(status_code=404, detail=f"Unknown saved strategy: {strategy_id}") from exc
+        saved = auth_store.get_user_strategy(current_user["id"], saved_strategy_id)
+        if not saved:
+            raise HTTPException(status_code=404, detail=f"Unknown saved strategy: {strategy_id}")
+        return CUSTOM_STRATEGY_ID, saved["config"], _saved_strategy_metadata(saved)
+    try:
+        return strategy_id, custom_strategy, get_strategy_metadata(strategy_id, custom_strategy)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
 
 
 async def _refresh_universe_periodically() -> None:

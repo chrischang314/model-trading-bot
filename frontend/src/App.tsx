@@ -7,6 +7,7 @@ import {
   ChevronRight,
   Database,
   Gauge,
+  LogOut,
   Layers,
   LineChart as LineIcon,
   Play,
@@ -15,6 +16,7 @@ import {
   Search,
   Server,
   SlidersHorizontal,
+  UserRound,
   Wallet
 } from "lucide-react";
 import {
@@ -33,6 +35,7 @@ import {
 } from "recharts";
 import {
   addSymbols,
+  fetchUserState,
   fetchLatestSignals,
   fetchOverview,
   fetchSignalCatalog,
@@ -41,9 +44,13 @@ import {
   fetchStrategy,
   fetchTimeseries,
   ingest,
+  login,
   refreshSp500Universe,
+  resetModelAccount,
   runBacktest,
-  runPaper
+  runPaper,
+  saveUserStrategy,
+  setApiUser
 } from "./api";
 import type {
   BacktestResult,
@@ -54,6 +61,7 @@ import type {
   SignalPoint,
   SignalValue,
   StrategyInfo,
+  LocalUser,
   UniverseResponse
 } from "./types";
 
@@ -223,18 +231,23 @@ export function App() {
   const [paper, setPaper] = useState<PaperSnapshot | null>(null);
   const [strategy, setStrategy] = useState<StrategyInfo | null>(null);
   const [strategies, setStrategies] = useState<StrategyInfo[]>([]);
+  const [currentUser, setCurrentUser] = useState<LocalUser | null>(null);
   const [selectedStrategyId, setSelectedStrategyId] = useState(DEFAULT_STRATEGY_ID);
   const [customStrategy, setCustomStrategy] = useState<CustomStrategyConfig>(DEFAULT_CUSTOM_STRATEGY);
   const [catalog, setCatalog] = useState<SignalCatalogItem[]>([]);
   const [universe, setUniverse] = useState<UniverseResponse | null>(null);
   const [newSymbol, setNewSymbol] = useState("");
+  const [loginName, setLoginName] = useState("");
   const [signalFilter, setSignalFilter] = useState("");
   const [appLoading, setAppLoading] = useState(true);
+  const [authLoading, setAuthLoading] = useState(false);
   const [symbolLoading, setSymbolLoading] = useState(false);
   const [addingSymbol, setAddingSymbol] = useState(false);
   const [refreshingData, setRefreshingData] = useState(false);
   const [syncingUniverse, setSyncingUniverse] = useState(false);
   const [backtestRunning, setBacktestRunning] = useState(false);
+  const [savingStrategy, setSavingStrategy] = useState(false);
+  const [resettingAccount, setResettingAccount] = useState(false);
   const [status, setStatus] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -399,13 +412,18 @@ export function App() {
   }
 
   async function changeStrategy(strategyId: string, nextCustom = customStrategy) {
-    const custom = strategyId === CUSTOM_STRATEGY_ID ? nextCustom : undefined;
+    const selected = strategies.find((item) => item.id === strategyId);
+    const effectiveCustom = selected?.custom ?? nextCustom;
+    const custom = strategyId === CUSTOM_STRATEGY_ID ? effectiveCustom : undefined;
+    if (selected?.custom) {
+      setCustomStrategy(selected.custom);
+    }
     setSelectedStrategyId(strategyId);
     setStatus("Switching strategy and recalculating views...");
     setError(null);
     try {
       await reloadOverview(selectedSymbol, strategyId, custom);
-      setStatus(`Strategy switched to ${strategyId === CUSTOM_STRATEGY_ID ? nextCustom.name : strategies.find((item) => item.id === strategyId)?.label ?? strategyId}.`);
+      setStatus(`Strategy switched to ${selected?.label ?? (strategyId === CUSTOM_STRATEGY_ID ? effectiveCustom.name : strategyId)}.`);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Strategy switch failed");
     }
@@ -415,7 +433,105 @@ export function App() {
     await changeStrategy(CUSTOM_STRATEGY_ID, customStrategy);
   }
 
+  async function handleLogin(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const username = loginName.trim();
+    if (!username) {
+      setError("Enter a local username.");
+      return;
+    }
+    setAuthLoading(true);
+    setError(null);
+    try {
+      const state = await login(username);
+      setCurrentUser(state.user);
+      setLoginName(state.user.username);
+      window.localStorage.setItem("modelTradingBotUser", JSON.stringify(state.user));
+      window.localStorage.setItem("sharedLocalUser", JSON.stringify(state.user));
+      if (state.paper_portfolio?.snapshot) {
+        setPaper(state.paper_portfolio.snapshot);
+      }
+      await loadApp(selectedSymbol);
+      setStatus(`Signed in as ${state.user.username}.`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Login failed");
+    } finally {
+      setAuthLoading(false);
+    }
+  }
+
+  function logout() {
+    setCurrentUser(null);
+    setApiUser(null);
+    window.localStorage.removeItem("modelTradingBotUser");
+    window.localStorage.removeItem("sharedLocalUser");
+    setStatus("Signed out. Using demo defaults until you sign in again.");
+    loadApp(selectedSymbol);
+  }
+
+  async function saveCurrentStrategy() {
+    setSavingStrategy(true);
+    setError(null);
+    try {
+      const saved = await saveUserStrategy(customStrategy);
+      setCustomStrategy(saved.custom ?? customStrategy);
+      setStrategies(await fetchStrategies());
+      await changeStrategy(saved.id, saved.custom ?? customStrategy);
+      setStatus(`${saved.label} saved to ${currentUser?.username ?? "this local account"}.`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Strategy save failed");
+    } finally {
+      setSavingStrategy(false);
+    }
+  }
+
+  async function resetAccount() {
+    const confirmed = window.confirm("Reset this model-trading-bot account to defaults? Saved scorecards and the paper portfolio snapshot will be cleared.");
+    if (!confirmed) {
+      return;
+    }
+    setResettingAccount(true);
+    setError(null);
+    try {
+      const state = await resetModelAccount();
+      setCurrentUser(state.user);
+      setCustomStrategy(DEFAULT_CUSTOM_STRATEGY);
+      setSelectedStrategyId(DEFAULT_STRATEGY_ID);
+      setPaper(null);
+      await loadApp(DEFAULT_SYMBOLS[0]);
+      setStatus(`${state.user.username}'s model-trading-bot account was reset to defaults.`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Account reset failed");
+    } finally {
+      setResettingAccount(false);
+    }
+  }
+
   useEffect(() => {
+    const stored = window.localStorage.getItem("modelTradingBotUser") || window.localStorage.getItem("sharedLocalUser");
+    if (stored) {
+      try {
+        const user = JSON.parse(stored) as LocalUser;
+        setCurrentUser(user);
+        setLoginName(user.username);
+        setApiUser(user.id);
+        fetchUserState()
+          .then((state) => {
+            setCurrentUser(state.user);
+            if (state.paper_portfolio?.snapshot) {
+              setPaper(state.paper_portfolio.snapshot);
+            }
+          })
+          .catch(() => {
+            window.localStorage.removeItem("modelTradingBotUser");
+            window.localStorage.removeItem("sharedLocalUser");
+            setApiUser(null);
+          });
+      } catch {
+        window.localStorage.removeItem("modelTradingBotUser");
+        window.localStorage.removeItem("sharedLocalUser");
+      }
+    }
     loadApp(DEFAULT_SYMBOLS[0]);
   }, []);
 
@@ -427,6 +543,14 @@ export function App() {
           <h1>Model Trading Bot</h1>
         </div>
         <div className="toolbar">
+          <AuthControl
+            currentUser={currentUser}
+            loginName={loginName}
+            setLoginName={setLoginName}
+            handleLogin={handleLogin}
+            logout={logout}
+            authLoading={authLoading}
+          />
           <label className="selectWrap" title="Symbol">
             <BarChart3 size={16} />
             <select value={selectedSymbol} onChange={(event) => chooseSymbol(event.target.value)} disabled={symbolLoading}>
@@ -542,11 +666,58 @@ export function App() {
           customStrategy={customStrategy}
           setCustomStrategy={setCustomStrategy}
           applyCustomStrategy={applyCustomStrategy}
+          saveCurrentStrategy={saveCurrentStrategy}
+          resetAccount={resetAccount}
           backtestRunning={backtestRunning}
+          savingStrategy={savingStrategy}
+          resettingAccount={resettingAccount}
           runSelectedBacktest={runSelectedBacktest}
         />
       ) : null}
     </main>
+  );
+}
+
+function AuthControl({
+  currentUser,
+  loginName,
+  setLoginName,
+  handleLogin,
+  logout,
+  authLoading
+}: {
+  currentUser: LocalUser | null;
+  loginName: string;
+  setLoginName: (value: string) => void;
+  handleLogin: (event: FormEvent<HTMLFormElement>) => void;
+  logout: () => void;
+  authLoading: boolean;
+}) {
+  if (currentUser) {
+    return (
+      <div className="authChip" data-testid="auth-chip">
+        <UserRound size={16} />
+        <span>{currentUser.username}</span>
+        <button type="button" onClick={logout} title="Sign out">
+          <LogOut size={15} />
+        </button>
+      </div>
+    );
+  }
+  return (
+    <form className="authForm" onSubmit={handleLogin} data-testid="auth-form">
+      <input
+        aria-label="Local username"
+        value={loginName}
+        onChange={(event) => setLoginName(event.target.value)}
+        placeholder="Username"
+        disabled={authLoading}
+      />
+      <button className="commandButton compact" type="submit" disabled={authLoading || !loginName.trim()}>
+        <UserRound size={17} />
+        {authLoading ? "Signing in" : "Login"}
+      </button>
+    </form>
   );
 }
 
@@ -1055,7 +1226,11 @@ function BacktestingPage({
   customStrategy,
   setCustomStrategy,
   applyCustomStrategy,
+  saveCurrentStrategy,
+  resetAccount,
   backtestRunning,
+  savingStrategy,
+  resettingAccount,
   runSelectedBacktest
 }: {
   selectedSymbol: string;
@@ -1065,7 +1240,11 @@ function BacktestingPage({
   customStrategy: CustomStrategyConfig;
   setCustomStrategy: (value: CustomStrategyConfig) => void;
   applyCustomStrategy: () => void;
+  saveCurrentStrategy: () => void;
+  resetAccount: () => void;
   backtestRunning: boolean;
+  savingStrategy: boolean;
+  resettingAccount: boolean;
   runSelectedBacktest: () => void;
 }) {
   return (
@@ -1123,7 +1302,11 @@ function BacktestingPage({
         customStrategy={customStrategy}
         setCustomStrategy={setCustomStrategy}
         applyCustomStrategy={applyCustomStrategy}
+        saveCurrentStrategy={saveCurrentStrategy}
+        resetAccount={resetAccount}
         disabled={backtestRunning}
+        savingStrategy={savingStrategy}
+        resettingAccount={resettingAccount}
       />
 
       <div className="panel">
@@ -1219,13 +1402,21 @@ function StrategyControlPanel({
   customStrategy,
   setCustomStrategy,
   applyCustomStrategy,
-  disabled
+  saveCurrentStrategy,
+  resetAccount,
+  disabled,
+  savingStrategy,
+  resettingAccount
 }: {
   strategy: StrategyInfo | null;
   customStrategy: CustomStrategyConfig;
   setCustomStrategy: (value: CustomStrategyConfig) => void;
   applyCustomStrategy: () => void;
+  saveCurrentStrategy: () => void;
+  resetAccount: () => void;
   disabled: boolean;
+  savingStrategy: boolean;
+  resettingAccount: boolean;
 }) {
   function updateNumber(
     key: "min_signal_score" | "max_rsi" | "min_rsi" | "min_adx" | "min_momentum_score",
@@ -1244,6 +1435,16 @@ function StrategyControlPanel({
       <div className="strategySummary">
         <strong>{strategy?.description ?? "-"}</strong>
         <p>{strategy?.position_rule ?? "-"}</p>
+      </div>
+      <div className="accountActions">
+        <button className="commandButton compact" type="button" onClick={saveCurrentStrategy} disabled={savingStrategy || strategy?.id !== CUSTOM_STRATEGY_ID}>
+          {savingStrategy ? <RefreshCw size={17} className="spin" /> : <Database size={17} />}
+          Save Scorecard
+        </button>
+        <button className="commandButton compact danger" type="button" onClick={resetAccount} disabled={resettingAccount}>
+          {resettingAccount ? <RefreshCw size={17} className="spin" /> : <RefreshCw size={17} />}
+          Reset Account
+        </button>
       </div>
       {strategy?.id === CUSTOM_STRATEGY_ID ? (
         <form

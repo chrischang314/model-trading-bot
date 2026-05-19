@@ -74,6 +74,13 @@ h2 {
   gap: 6px;
 }
 
+.authForm {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.authForm input,
 .tickerForm input {
   width: 104px;
   min-height: 40px;
@@ -86,9 +93,37 @@ h2 {
   font-weight: 700;
 }
 
+.authForm input {
+  width: 128px;
+}
+
+.authForm input:focus,
 .tickerForm input:focus {
   border-color: #0f766e;
   box-shadow: 0 0 0 3px rgba(15, 118, 110, 0.12);
+}
+
+.authChip {
+  min-height: 40px;
+  border: 1px solid #cde5dc;
+  background: #f7faf8;
+  color: #0f766e;
+  border-radius: 8px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 8px 0 10px;
+  font-weight: 800;
+}
+
+.authChip button {
+  border: 0;
+  background: transparent;
+  color: #0f766e;
+  cursor: pointer;
+  display: grid;
+  place-items: center;
+  padding: 2px;
 }
 
 .selectWrap,
@@ -148,6 +183,11 @@ h2 {
 .iconButton:disabled {
   cursor: wait;
   color: #9ca3af;
+}
+
+.commandButton.danger {
+  border-color: #fecaca;
+  color: #991b1b;
 }
 
 .spin {
@@ -847,6 +887,13 @@ h2 {
   color: #4b5563;
 }
 
+.accountActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+
 .customStrategyForm {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -1100,6 +1147,16 @@ tbody tr:hover,
 
   .tickerForm {
     flex: 1 1 160px;
+  }
+
+  .authForm,
+  .authChip {
+    flex: 1 1 100%;
+  }
+
+  .authForm input {
+    flex: 1;
+    min-width: 0;
   }
 
   .tickerForm input {

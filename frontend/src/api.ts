@@ -6,21 +6,46 @@ import type {
   SignalCatalogItem,
   SignalPoint,
   StrategyInfo,
+  UserState,
   UniverseResponse
 } from "./types";
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL ?? "/api";
+let activeUserId: number | null = null;
+
+export function setApiUser(userId: number | null) {
+  activeUserId = userId;
+}
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  const headers = new Headers(init?.headers);
+  headers.set("Content-Type", "application/json");
+  if (activeUserId != null) {
+    headers.set("X-User-Id", String(activeUserId));
+  }
   const response = await fetch(`${API_BASE}${path}`, {
-    headers: { "Content-Type": "application/json" },
-    ...init
+    ...init,
+    headers
   });
   if (!response.ok) {
     const detail = await response.text();
     throw new Error(detail || response.statusText);
   }
   return response.json();
+}
+
+export async function login(username: string): Promise<UserState> {
+  const envelope = await request<{ data: UserState }>("/auth/login", {
+    method: "POST",
+    body: JSON.stringify({ username })
+  });
+  setApiUser(envelope.data.user.id);
+  return envelope.data;
+}
+
+export async function fetchUserState(): Promise<UserState> {
+  const envelope = await request<{ data: UserState }>("/user/state");
+  return envelope.data;
 }
 
 export async function fetchOverview(strategyId?: string, customStrategy?: CustomStrategyConfig): Promise<OverviewRow[]> {
@@ -49,6 +74,19 @@ export async function addSymbols(symbols: string[]): Promise<void> {
 
 export async function fetchStrategies(): Promise<StrategyInfo[]> {
   const envelope = await request<{ data: StrategyInfo[] }>("/strategies");
+  return envelope.data;
+}
+
+export async function saveUserStrategy(strategy: CustomStrategyConfig): Promise<StrategyInfo> {
+  const envelope = await request<{ data: StrategyInfo }>("/user/strategies", {
+    method: "POST",
+    body: JSON.stringify({ strategy })
+  });
+  return envelope.data;
+}
+
+export async function resetModelAccount(): Promise<UserState> {
+  const envelope = await request<{ data: UserState }>("/user/account/reset", { method: "POST" });
   return envelope.data;
 }
 
