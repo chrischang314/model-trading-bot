@@ -35,6 +35,7 @@ import {
 } from "recharts";
 import {
   addSymbols,
+  fetchDiagnostics,
   fetchUserState,
   fetchLatestSignals,
   fetchOverview,
@@ -62,6 +63,7 @@ import type {
   SignalValue,
   StrategyInfo,
   LocalUser,
+  SystemDiagnostics,
   UniverseResponse
 } from "./types";
 
@@ -231,6 +233,7 @@ export function App() {
   const [paper, setPaper] = useState<PaperSnapshot | null>(null);
   const [strategy, setStrategy] = useState<StrategyInfo | null>(null);
   const [strategies, setStrategies] = useState<StrategyInfo[]>([]);
+  const [diagnostics, setDiagnostics] = useState<SystemDiagnostics | null>(null);
   const [currentUser, setCurrentUser] = useState<LocalUser | null>(null);
   const [selectedStrategyId, setSelectedStrategyId] = useState(DEFAULT_STRATEGY_ID);
   const [customStrategy, setCustomStrategy] = useState<CustomStrategyConfig>(DEFAULT_CUSTOM_STRATEGY);
@@ -268,13 +271,14 @@ export function App() {
     setAppLoading(true);
     setError(null);
     try {
-      const [rows, signalRows, strategyInfo, strategyRows, catalogRows, universeRows] = await Promise.all([
+      const [rows, signalRows, strategyInfo, strategyRows, catalogRows, universeRows, diagnosticsRows] = await Promise.all([
         fetchOverview(selectedStrategyId, selectedCustomStrategy),
         fetchLatestSignals(selectedStrategyId, selectedCustomStrategy),
         fetchStrategy(selectedStrategyId, selectedCustomStrategy),
         fetchStrategies(),
         fetchSignalCatalog(),
-        fetchSp500Universe(false).catch(() => null)
+        fetchSp500Universe(false).catch(() => null),
+        fetchDiagnostics().catch(() => null)
       ]);
       setOverview(rows);
       setLatestSignals(signalRows);
@@ -283,6 +287,9 @@ export function App() {
       setCatalog(catalogRows);
       if (universeRows) {
         setUniverse(universeRows);
+      }
+      if (diagnosticsRows) {
+        setDiagnostics(diagnosticsRows);
       }
       const active = rows.some((row) => row.sym === symbol) ? symbol : rows[0]?.sym ?? DEFAULT_SYMBOLS[0];
       setSelectedSymbol(active);
@@ -328,14 +335,18 @@ export function App() {
     strategyId = selectedStrategyId,
     custom = strategyId === CUSTOM_STRATEGY_ID ? customStrategy : undefined
   ) {
-    const [rows, signalRows, strategyInfo] = await Promise.all([
+    const [rows, signalRows, strategyInfo, diagnosticsRows] = await Promise.all([
       fetchOverview(strategyId, custom),
       fetchLatestSignals(strategyId, custom),
-      fetchStrategy(strategyId, custom)
+      fetchStrategy(strategyId, custom),
+      fetchDiagnostics().catch(() => null)
     ]);
     setOverview(rows);
     setLatestSignals(signalRows);
     setStrategy(strategyInfo);
+    if (diagnosticsRows) {
+      setDiagnostics(diagnosticsRows);
+    }
     await loadSymbol(nextSymbol, rows, true, strategyId, custom);
   }
 
@@ -618,6 +629,7 @@ export function App() {
           latest={latest}
           overview={overview}
           universe={universe}
+          diagnostics={diagnostics}
           strategy={strategy}
           backtest={backtest}
           paper={paper}
@@ -726,6 +738,7 @@ function HomePage({
   latest,
   overview,
   universe,
+  diagnostics,
   strategy,
   backtest,
   paper,
@@ -735,6 +748,7 @@ function HomePage({
   latest: OverviewRow | undefined;
   overview: OverviewRow[];
   universe: UniverseResponse | null;
+  diagnostics: SystemDiagnostics | null;
   strategy: StrategyInfo | null;
   backtest: BacktestResult | null;
   paper: PaperSnapshot | null;
@@ -780,16 +794,57 @@ function HomePage({
         </div>
         <div className="panel">
           <div className="panelHeader">
-            <h2>Universe</h2>
-            <span>{universe?.as_of ? new Date(universe.as_of).toLocaleDateString() : "-"}</span>
+            <h2>Operations</h2>
+            <span>{diagnostics?.generated_at ? shortTime(diagnostics.generated_at) : "-"}</span>
           </div>
-          <div className="universeSummary">
-            <strong>{universe ? `${universe.count} S&P 500 listings cached` : "No S&P cache yet"}</strong>
-            <p>The backend periodically re-polls the constituent table and uses it as the ticker search universe. Market data is still fetched only for watched symbols to keep the free data providers happy.</p>
-          </div>
+          <DiagnosticsPanel diagnostics={diagnostics} universe={universe} />
         </div>
       </section>
     </>
+  );
+}
+
+function DiagnosticsPanel({ diagnostics, universe }: { diagnostics: SystemDiagnostics | null; universe: UniverseResponse | null }) {
+  const signalDate = diagnostics?.signals.latest_date;
+  const missingSignals = diagnostics?.signals.missing_symbols.length ?? 0;
+  const universeCount = diagnostics?.universe.count ?? universe?.count ?? 0;
+  const universeDate = diagnostics?.universe.as_of ?? universe?.as_of ?? null;
+  const storageBackend = typeof diagnostics?.health.storage_backend === "string" ? diagnostics.health.storage_backend : "storage";
+  return (
+    <div className="diagnosticsPanel" data-testid="diagnostics-panel">
+      <div className="diagnosticItem">
+        <span className={`statusDot ${diagnostics ? (diagnostics.storage_ok ? "ok" : "bad") : ""}`} />
+        <div>
+          <strong>Storage</strong>
+          <small>{diagnostics ? (diagnostics.storage_ok ? `${storageBackend} online` : "storage check failed") : "Loading"}</small>
+        </div>
+      </div>
+      <div className="diagnosticItem">
+        <span className={`statusDot ${diagnostics ? (diagnostics.auth_ok ? "ok" : "bad") : ""}`} />
+        <div>
+          <strong>Shared Login</strong>
+          <small>{diagnostics ? (diagnostics.auth_ok ? "ready" : "auth check failed") : "Loading"}</small>
+        </div>
+      </div>
+      <div className="diagnosticItem">
+        <span className={`statusDot ${signalDate && missingSignals === 0 ? "ok" : "warn"}`} />
+        <div>
+          <strong>Signals</strong>
+          <small>{signalDate ? `${diagnostics?.signals.rows ?? 0} rows through ${shortDate(signalDate)}` : "no signal rows yet"}</small>
+        </div>
+      </div>
+      <div className="diagnosticItem">
+        <span className={`statusDot ${diagnostics?.universe.stale ? "warn" : universeCount ? "ok" : "bad"}`} />
+        <div>
+          <strong>S&P Cache</strong>
+          <small>{universeCount ? `${compact.format(universeCount)} listings, ${shortDate(universeDate)}` : "cache missing"}</small>
+        </div>
+      </div>
+      <div className="diagnosticFooter">
+        <span>{diagnostics ? `${diagnostics.symbols.count} watched tickers` : "Diagnostics loading"}</span>
+        <span>{diagnostics?.generated_at ? `checked ${shortTime(diagnostics.generated_at)}` : "-"}</span>
+      </div>
+    </div>
   );
 }
 
@@ -1977,6 +2032,22 @@ function buildSignalTrendData(series: SignalPoint[], selectedKeys: string[], sca
 
 function numericSignal(value: SignalValue | undefined) {
   return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+function shortDate(value: string | null | undefined) {
+  if (!value) {
+    return "-";
+  }
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? "-" : parsed.toLocaleDateString();
+}
+
+function shortTime(value: string | null | undefined) {
+  if (!value) {
+    return "-";
+  }
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? "-" : parsed.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
 }
 
 function labelPage(page: Page) {

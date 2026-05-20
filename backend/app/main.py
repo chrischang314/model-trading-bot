@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import asyncio
-from datetime import date
+from datetime import UTC, date, datetime
 
 import pandas as pd
 from fastapi import Depends, FastAPI, Header, HTTPException, Query
@@ -99,6 +99,15 @@ async def bootstrap() -> None:
 
 @app.get("/health")
 def health() -> dict:
+    return _health_snapshot()
+
+
+@app.get("/api/diagnostics", response_model=ApiEnvelope)
+def diagnostics() -> ApiEnvelope:
+    return ApiEnvelope(data=_diagnostics_snapshot())
+
+
+def _health_snapshot() -> dict:
     status = {"app": settings.app_name, "storage_backend": settings.storage_backend}
     try:
         status["storage"] = storage.health()
@@ -110,6 +119,22 @@ def health() -> dict:
     except Exception as exc:
         status["auth"] = {"ok": False, "error": str(exc)}
     return status
+
+
+def _diagnostics_snapshot() -> dict:
+    health_status = _health_snapshot()
+    symbols = _available_symbols()
+    return {
+        "app": settings.app_name,
+        "generated_at": datetime.now(UTC).isoformat(),
+        "storage_ok": bool(health_status.get("storage", {}).get("ok")),
+        "auth_ok": bool(health_status.get("auth", {}).get("ok")),
+        "health": health_status,
+        "symbols": {"count": len(symbols), "items": symbols},
+        "bars": _storage_frame_diagnostics(lambda: storage.get_bars(symbols=symbols), symbols),
+        "signals": _storage_frame_diagnostics(lambda: storage.get_signals(symbols=symbols), symbols),
+        "universe": universe_service.cache_status(),
+    }
 
 
 @app.post("/api/auth/login", response_model=ApiEnvelope)
@@ -371,6 +396,42 @@ def _available_symbols() -> list[str]:
     except Exception:
         stored_symbols = []
     return normalize_symbols([*settings.default_symbols, *stored_symbols])
+
+
+def _storage_frame_diagnostics(load_frame, symbols: list[str]) -> dict:
+    try:
+        frame = load_frame()
+    except Exception as exc:
+        return {
+            "ok": False,
+            "rows": 0,
+            "symbols": 0,
+            "latest_date": None,
+            "missing_symbols": symbols,
+            "error": str(exc),
+        }
+    if frame.empty:
+        return {
+            "ok": True,
+            "rows": 0,
+            "symbols": 0,
+            "latest_date": None,
+            "missing_symbols": symbols,
+        }
+
+    present_symbols = sorted(frame["sym"].dropna().astype(str).str.upper().unique()) if "sym" in frame.columns else []
+    latest_date = None
+    if "date" in frame.columns:
+        latest_raw = pd.to_datetime(frame["date"], errors="coerce").max()
+        if not pd.isna(latest_raw):
+            latest_date = latest_raw.date().isoformat()
+    return {
+        "ok": True,
+        "rows": int(len(frame)),
+        "symbols": len(present_symbols),
+        "latest_date": latest_date,
+        "missing_symbols": sorted(set(symbols) - set(present_symbols)),
+    }
 
 
 def _saved_strategy_metadata(saved: dict) -> dict:

@@ -87,6 +87,7 @@ Main API routes:
 - `GET /api/signals/catalog`
 - `GET /api/signals/latest`
 - `GET /api/explain/{symbol}`
+- `GET /api/diagnostics`
 - `GET /api/universe/sp500`
 - `POST /api/universe/sp500/refresh`
 - `GET /api/overview`
@@ -176,6 +177,7 @@ Dashboard capabilities:
 - Global strategy selector
 - Four pages: Home, Stock, Signals, Backtesting
 - Home page Trading System Walkthrough with interactive data/signals/strategy/backtest/paper stages and live readouts
+- Home page Operations snapshot that surfaces storage health, shared-login health, latest signal date, and S&P 500 cache status from `/api/diagnostics`
 - Interactive price chart with range selection, SMA/Bollinger/Keltner/position layer toggles, hover tooltips, brush zoom, and principle cards
 - MACD chart
 - RSI chart
@@ -349,7 +351,8 @@ If another LLM picks this up, the next best task is:
 2. Fix any q/PyKX IPC conversion issues.
 3. Add integration tests that use a running KDB service.
 4. Add CI that runs backend tests and frontend build.
-5. Add a short demo script that performs ingest, overview, backtest, and paper calls.
+5. Expand `/api/diagnostics` with request timing or provider status if this becomes a daily operations tool.
+6. Add a short demo script that performs ingest, overview, diagnostics, backtest, and paper calls.
 
 ## Files To Avoid Committing
 

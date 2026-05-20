@@ -105,6 +105,7 @@ The dashboard calls:
 - `GET /api/signals/catalog` and `GET /api/signals/latest` for expandable signal descriptions and the latest full signal matrix.
 - `GET /api/explain/{symbol}` for the latest component-level explanation.
 - `GET /api/overview` for latest cross-symbol state.
+- `GET /api/diagnostics` for a dashboard-ready storage, auth, data freshness, and S&P cache snapshot.
 - `GET /api/timeseries/{symbol}` for price, indicator, position, and signal-trend chart data.
 - `POST /api/backtests` for the selected long/cash strategy.
 - `POST /api/paper/run` and `GET /api/paper/portfolio` for a user-scoped paper account snapshot using the selected strategy.
@@ -127,6 +128,10 @@ The toy strategy layer is intentionally simple but now supports a strategy regis
 Real trading systems commonly ingest algorithms as versioned source modules, reviewed configuration files, parameter sets for approved strategy templates, notebook research promoted into production code, or restricted DSL/rule expressions. This toy app uses the safer template/config route: built-ins are Python strategy functions, while the custom strategy UI sends a validated scorecard configuration instead of arbitrary executable code.
 
 The signal set is influenced by classic technical-analysis and momentum literature, including [Brock, Lakonishok & LeBaron](https://ideas.repec.org/a/bla/jfinan/v47y1992i5p1731-64.html) on moving-average and trading-range rules, [Lo, Mamaysky & Wang](https://web.mit.edu/wangj/www/pap/LoMamayskyWang00.pdf) on statistical technical-analysis foundations, [Jegadeesh & Titman](https://doi.org/10.1111/j.1540-6261.1993.tb04702.x) on cross-sectional momentum, [Moskowitz, Ooi & Pedersen](https://www.aqr.com/insights/research/journal-article/time-series-momentum) on time-series momentum, [Hurst, Ooi & Pedersen](https://www.aqr.com/insights/research/journal-article/a-century-of-evidence-on-trend-following-investing) on long-run trend following, and [Han, Yang & Zhou](https://www.cambridge.org/core/product/identifier/S0022109013000586/type/journal_article) on cross-sectional profitability of moving-average technical analysis.
+
+## Operations Snapshot
+
+The Home page includes an Operations panel backed by `GET /api/diagnostics`. It shows whether local storage and shared login are healthy, how current the stored signal rows are, and whether the cached S&P 500 universe is available or stale. The diagnostics endpoint reads the existing universe cache status without forcing an internet refresh, so loading the dashboard stays fast even when Wikipedia or the network is unavailable.
 
 ## Kubernetes
 

@@ -6,6 +6,7 @@ import type {
   SignalCatalogItem,
   SignalPoint,
   StrategyInfo,
+  SystemDiagnostics,
   UserState,
   UniverseResponse
 } from "./types";
@@ -50,6 +51,11 @@ export async function fetchUserState(): Promise<UserState> {
 
 export async function fetchOverview(strategyId?: string, customStrategy?: CustomStrategyConfig): Promise<OverviewRow[]> {
   const envelope = await request<{ data: OverviewRow[] }>(`/overview${strategyQuery(strategyId, customStrategy)}`);
+  return envelope.data;
+}
+
+export async function fetchDiagnostics(): Promise<SystemDiagnostics> {
+  const envelope = await request<{ data: SystemDiagnostics }>("/diagnostics");
   return envelope.data;
 }
 

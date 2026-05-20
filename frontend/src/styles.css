@@ -1051,6 +1051,67 @@ h2 {
   color: #4b5563;
 }
 
+.diagnosticsPanel {
+  display: grid;
+  gap: 9px;
+}
+
+.diagnosticItem {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: 12px minmax(0, 1fr);
+  gap: 9px;
+  align-items: center;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  padding: 9px 10px;
+}
+
+.diagnosticItem strong,
+.diagnosticItem small {
+  display: block;
+}
+
+.diagnosticItem strong {
+  font-size: 13px;
+}
+
+.diagnosticItem small {
+  margin-top: 2px;
+  color: #6b7280;
+  font-size: 12px;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.statusDot {
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+  background: #9ca3af;
+}
+
+.statusDot.ok {
+  background: #059669;
+}
+
+.statusDot.warn {
+  background: #d97706;
+}
+
+.statusDot.bad {
+  background: #dc2626;
+}
+
+.diagnosticFooter {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  color: #4b5563;
+  font-size: 12px;
+  font-weight: 800;
+}
+
 table {
   width: 100%;
   border-collapse: collapse;

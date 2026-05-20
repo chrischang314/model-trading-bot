@@ -37,6 +37,32 @@ class SP500UniverseService:
                 raise
         return cached
 
+    def cache_status(self) -> dict:
+        cached = self._read_cache()
+        if not cached:
+            return {
+                "ok": False,
+                "path": str(self.cache_path),
+                "source": SP500_WIKI_URL,
+                "as_of": None,
+                "count": 0,
+                "stale": True,
+                "error": "Universe cache has not been created yet",
+            }
+
+        members = cached.get("members")
+        member_count = len(members) if isinstance(members, list) else 0
+        raw_count = cached.get("count")
+        count = raw_count if isinstance(raw_count, int) else member_count
+        return {
+            "ok": True,
+            "path": str(self.cache_path),
+            "source": cached.get("source", SP500_WIKI_URL),
+            "as_of": cached.get("as_of"),
+            "count": count,
+            "stale": self._is_stale(cached),
+        }
+
     def refresh(self) -> dict:
         members = self._fetch_from_wikipedia()
         payload = {

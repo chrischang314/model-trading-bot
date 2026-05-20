@@ -236,3 +236,35 @@ export type UniverseResponse = {
   count: number;
   members: UniverseMember[];
 };
+
+export type DiagnosticsFrame = {
+  ok: boolean;
+  rows: number;
+  symbols: number;
+  latest_date: string | null;
+  missing_symbols: string[];
+  error?: string;
+};
+
+export type SystemDiagnostics = {
+  app: string;
+  generated_at: string;
+  storage_ok: boolean;
+  auth_ok: boolean;
+  health: Record<string, unknown>;
+  symbols: {
+    count: number;
+    items: string[];
+  };
+  bars: DiagnosticsFrame;
+  signals: DiagnosticsFrame;
+  universe: {
+    ok: boolean;
+    path: string;
+    source: string;
+    as_of: string | null;
+    count: number;
+    stale: boolean;
+    error?: string;
+  };
+};
