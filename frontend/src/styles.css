@@ -768,6 +768,31 @@ h2 {
   align-self: start;
 }
 
+.strategyComparePanel {
+  align-self: start;
+}
+
+.comparisonSummary {
+  display: grid;
+  gap: 6px;
+  margin-bottom: 10px;
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.comparisonSummary strong,
+.comparisonSummary p {
+  margin: 0;
+}
+
+.comparisonSummary p {
+  color: #4b5563;
+}
+
+.strategyCompareTable {
+  max-height: 300px;
+}
+
 .anatomyPanel {
   align-self: start;
 }

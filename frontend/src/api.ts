@@ -1,4 +1,5 @@
 import type {
+  BacktestComparison,
   BacktestResult,
   CustomStrategyConfig,
   OverviewRow,
@@ -127,6 +128,14 @@ export async function runBacktest(symbol: string, strategyId?: string, customStr
     body: JSON.stringify({ symbol, initial_capital: 100000, fee_bps: 1, slippage_bps: 2, strategy_id: strategyId, custom_strategy: customStrategy })
   });
   return envelope.data;
+}
+
+export async function compareBacktests(symbol: string, strategyIds: string[], customStrategy?: CustomStrategyConfig): Promise<BacktestComparison[]> {
+  const envelope = await request<{ data: { symbol: string; comparisons: BacktestComparison[] } }>("/backtests/compare", {
+    method: "POST",
+    body: JSON.stringify({ symbol, strategy_ids: strategyIds, initial_capital: 100000, fee_bps: 1, slippage_bps: 2, custom_strategy: customStrategy })
+  });
+  return envelope.data.comparisons;
 }
 
 export async function runPaper(symbols: string[], strategyId?: string, customStrategy?: CustomStrategyConfig): Promise<PaperSnapshot> {

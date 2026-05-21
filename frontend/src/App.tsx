@@ -35,6 +35,7 @@ import {
 } from "recharts";
 import {
   addSymbols,
+  compareBacktests,
   fetchDiagnostics,
   fetchUserState,
   fetchLatestSignals,
@@ -54,6 +55,7 @@ import {
   setApiUser
 } from "./api";
 import type {
+  BacktestComparison,
   BacktestResult,
   CustomStrategyConfig,
   OverviewRow,
@@ -230,6 +232,7 @@ export function App() {
   const [selectedSymbol, setSelectedSymbol] = useState(DEFAULT_SYMBOLS[0]);
   const [series, setSeries] = useState<SignalPoint[]>([]);
   const [backtest, setBacktest] = useState<BacktestResult | null>(null);
+  const [strategyComparison, setStrategyComparison] = useState<BacktestComparison[]>([]);
   const [paper, setPaper] = useState<PaperSnapshot | null>(null);
   const [strategy, setStrategy] = useState<StrategyInfo | null>(null);
   const [strategies, setStrategies] = useState<StrategyInfo[]>([]);
@@ -249,6 +252,7 @@ export function App() {
   const [refreshingData, setRefreshingData] = useState(false);
   const [syncingUniverse, setSyncingUniverse] = useState(false);
   const [backtestRunning, setBacktestRunning] = useState(false);
+  const [comparisonLoading, setComparisonLoading] = useState(false);
   const [savingStrategy, setSavingStrategy] = useState(false);
   const [resettingAccount, setResettingAccount] = useState(false);
   const [status, setStatus] = useState<string | null>(null);
@@ -422,6 +426,23 @@ export function App() {
     }
   }
 
+  async function runStrategyComparison() {
+    const builtInIds = strategies.filter((item) => item.kind === "built_in").map((item) => item.id);
+    const selectedExtras = selectedStrategyId === CUSTOM_STRATEGY_ID || selectedStrategyId.startsWith("user_strategy_") ? [selectedStrategyId] : [];
+    const strategyIds = Array.from(new Set([...(builtInIds.length ? builtInIds : [DEFAULT_STRATEGY_ID]), ...selectedExtras]));
+    setComparisonLoading(true);
+    setStatus(`Comparing ${strategyIds.length} strategies for ${selectedSymbol}...`);
+    setError(null);
+    try {
+      setStrategyComparison(await compareBacktests(selectedSymbol, strategyIds, selectedStrategyId === CUSTOM_STRATEGY_ID ? customStrategy : undefined));
+      setStatus(`Strategy comparison updated for ${selectedSymbol}.`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Strategy comparison failed");
+    } finally {
+      setComparisonLoading(false);
+    }
+  }
+
   async function changeStrategy(strategyId: string, nextCustom = customStrategy) {
     const selected = strategies.find((item) => item.id === strategyId);
     const effectiveCustom = selected?.custom ?? nextCustom;
@@ -545,6 +566,10 @@ export function App() {
     }
     loadApp(DEFAULT_SYMBOLS[0]);
   }, []);
+
+  useEffect(() => {
+    setStrategyComparison([]);
+  }, [selectedSymbol]);
 
   return (
     <main className="shell">
@@ -675,6 +700,8 @@ export function App() {
           backtest={backtest}
           latest={latest}
           strategy={strategy}
+          strategies={strategies}
+          strategyComparison={strategyComparison}
           customStrategy={customStrategy}
           setCustomStrategy={setCustomStrategy}
           applyCustomStrategy={applyCustomStrategy}
@@ -683,7 +710,9 @@ export function App() {
           backtestRunning={backtestRunning}
           savingStrategy={savingStrategy}
           resettingAccount={resettingAccount}
+          comparisonLoading={comparisonLoading}
           runSelectedBacktest={runSelectedBacktest}
+          runStrategyComparison={runStrategyComparison}
         />
       ) : null}
     </main>
@@ -1278,6 +1307,8 @@ function BacktestingPage({
   backtest,
   latest,
   strategy,
+  strategies,
+  strategyComparison,
   customStrategy,
   setCustomStrategy,
   applyCustomStrategy,
@@ -1286,12 +1317,16 @@ function BacktestingPage({
   backtestRunning,
   savingStrategy,
   resettingAccount,
-  runSelectedBacktest
+  comparisonLoading,
+  runSelectedBacktest,
+  runStrategyComparison
 }: {
   selectedSymbol: string;
   backtest: BacktestResult | null;
   latest: OverviewRow | undefined;
   strategy: StrategyInfo | null;
+  strategies: StrategyInfo[];
+  strategyComparison: BacktestComparison[];
   customStrategy: CustomStrategyConfig;
   setCustomStrategy: (value: CustomStrategyConfig) => void;
   applyCustomStrategy: () => void;
@@ -1300,7 +1335,9 @@ function BacktestingPage({
   backtestRunning: boolean;
   savingStrategy: boolean;
   resettingAccount: boolean;
+  comparisonLoading: boolean;
   runSelectedBacktest: () => void;
+  runStrategyComparison: () => void;
 }) {
   return (
     <section className="backtestLayout">
@@ -1322,6 +1359,14 @@ function BacktestingPage({
       </div>
 
       <BacktestAnatomyPanel backtest={backtest} />
+
+      <StrategyComparisonPanel
+        selectedSymbol={selectedSymbol}
+        strategies={strategies}
+        comparison={strategyComparison}
+        comparisonLoading={comparisonLoading}
+        runStrategyComparison={runStrategyComparison}
+      />
 
       <div className="panel">
         <div className="panelHeader">
@@ -1448,6 +1493,73 @@ function BacktestAnatomyPanel({ backtest }: { backtest: BacktestResult | null })
           <p>The selected strategy stayed in one stance for the available history.</p>
         </div>
       )}
+    </div>
+  );
+}
+
+function StrategyComparisonPanel({
+  selectedSymbol,
+  strategies,
+  comparison,
+  comparisonLoading,
+  runStrategyComparison
+}: {
+  selectedSymbol: string;
+  strategies: StrategyInfo[];
+  comparison: BacktestComparison[];
+  comparisonLoading: boolean;
+  runStrategyComparison: () => void;
+}) {
+  const builtInCount = strategies.filter((item) => item.kind === "built_in").length || 1;
+  const leader = comparison[0];
+  return (
+    <div className="panel strategyComparePanel">
+      <div className="panelHeader">
+        <h2>Strategy Comparison</h2>
+        <button className="commandButton compact" type="button" onClick={runStrategyComparison} disabled={comparisonLoading}>
+          {comparisonLoading ? <RefreshCw size={17} className="spin" /> : <BarChart3 size={17} />}
+          Compare
+        </button>
+      </div>
+      <div className="comparisonSummary">
+        <strong>{leader ? `${leader.strategy.label} leads ${selectedSymbol}` : `${builtInCount} built-in strategies ready`}</strong>
+        <p>
+          {leader
+            ? `${pct.format(leader.metrics.total_return ?? 0)} return, ${pct.format(leader.metrics.max_drawdown ?? 0)} max drawdown, ${leader.trade_count} trades`
+            : "Run a side-by-side backtest to compare return, drawdown, Sharpe, exposure, and turnover."}
+        </p>
+      </div>
+      <div className="tableWrap strategyCompareTable">
+        <table>
+          <thead>
+            <tr>
+              <th>Strategy</th>
+              <th>Return</th>
+              <th>Sharpe</th>
+              <th>Drawdown</th>
+              <th>Exposure</th>
+              <th>Trades</th>
+            </tr>
+          </thead>
+          <tbody>
+            {comparison.map((item) => (
+              <tr key={item.strategy.id}>
+                <td>{item.strategy.label}</td>
+                <td>{pct.format(item.metrics.total_return ?? 0)}</td>
+                <td>{fmt(item.metrics.sharpe)}</td>
+                <td>{pct.format(item.metrics.max_drawdown ?? 0)}</td>
+                <td>{pct.format(item.metrics.exposure ?? 0)}</td>
+                <td>{item.trade_count}</td>
+              </tr>
+            ))}
+            {!comparison.length ? (
+              <tr>
+                <td colSpan={6}>No comparison run yet.</td>
+              </tr>
+            ) : null}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }
