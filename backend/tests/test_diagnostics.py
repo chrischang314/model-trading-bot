@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 import json
 
 import pandas as pd
@@ -65,7 +65,28 @@ def test_diagnostics_endpoint_reports_operational_snapshot(monkeypatch) -> None:
     assert "MSFT" in data["symbols"]["items"]
     assert data["signals"]["latest_date"] == "2026-05-19"
     assert data["signals"]["missing_symbols"] == []
+    assert data["signals"]["age_days"] is not None
+    assert data["signals"]["stale"] in {True, False}
     assert data["universe"]["count"] == 503
+
+
+def test_storage_frame_diagnostics_marks_stale_market_data() -> None:
+    stale_frame = pd.DataFrame({"date": pd.to_datetime(["2026-05-17"]), "sym": ["MSFT"]})
+
+    status = main_module._storage_frame_diagnostics(lambda: stale_frame, ["MSFT"], reference_date=date(2026, 5, 21))
+
+    assert status["latest_date"] == "2026-05-17"
+    assert status["age_days"] == 4
+    assert status["stale"] is True
+
+
+def test_storage_frame_diagnostics_accepts_recent_market_data() -> None:
+    recent_frame = pd.DataFrame({"date": pd.to_datetime(["2026-05-20"]), "sym": ["MSFT"]})
+
+    status = main_module._storage_frame_diagnostics(lambda: recent_frame, ["MSFT"], reference_date=date(2026, 5, 21))
+
+    assert status["age_days"] == 1
+    assert status["stale"] is False
 
 
 def test_universe_cache_status_uses_existing_cache_without_refresh(tmp_path) -> None:

@@ -20,6 +20,8 @@ from app.storage import create_storage
 from app.utils import clean_records, normalize_symbols
 
 
+DATA_STALE_AFTER_DAYS = 3
+
 app = FastAPI(title="Model Trading Bot", version="0.1.0")
 app.add_middleware(
     CORSMiddleware,
@@ -124,15 +126,16 @@ def _health_snapshot() -> dict:
 def _diagnostics_snapshot() -> dict:
     health_status = _health_snapshot()
     symbols = _available_symbols()
+    generated_at = datetime.now(UTC)
     return {
         "app": settings.app_name,
-        "generated_at": datetime.now(UTC).isoformat(),
+        "generated_at": generated_at.isoformat(),
         "storage_ok": bool(health_status.get("storage", {}).get("ok")),
         "auth_ok": bool(health_status.get("auth", {}).get("ok")),
         "health": health_status,
         "symbols": {"count": len(symbols), "items": symbols},
-        "bars": _storage_frame_diagnostics(lambda: storage.get_bars(symbols=symbols), symbols),
-        "signals": _storage_frame_diagnostics(lambda: storage.get_signals(symbols=symbols), symbols),
+        "bars": _storage_frame_diagnostics(lambda: storage.get_bars(symbols=symbols), symbols, generated_at.date()),
+        "signals": _storage_frame_diagnostics(lambda: storage.get_signals(symbols=symbols), symbols, generated_at.date()),
         "universe": universe_service.cache_status(),
     }
 
@@ -398,7 +401,16 @@ def _available_symbols() -> list[str]:
     return normalize_symbols([*settings.default_symbols, *stored_symbols])
 
 
-def _storage_frame_diagnostics(load_frame, symbols: list[str]) -> dict:
+def _freshness_fields(latest_date: str | None, reference_date: date) -> dict:
+    if not latest_date:
+        return {"age_days": None, "stale": True}
+    latest = date.fromisoformat(latest_date)
+    age_days = max((reference_date - latest).days, 0)
+    return {"age_days": age_days, "stale": age_days > DATA_STALE_AFTER_DAYS}
+
+
+def _storage_frame_diagnostics(load_frame, symbols: list[str], reference_date: date | None = None) -> dict:
+    reference = reference_date or datetime.now(UTC).date()
     try:
         frame = load_frame()
     except Exception as exc:
@@ -408,6 +420,8 @@ def _storage_frame_diagnostics(load_frame, symbols: list[str]) -> dict:
             "symbols": 0,
             "latest_date": None,
             "missing_symbols": symbols,
+            "age_days": None,
+            "stale": True,
             "error": str(exc),
         }
     if frame.empty:
@@ -417,6 +431,8 @@ def _storage_frame_diagnostics(load_frame, symbols: list[str]) -> dict:
             "symbols": 0,
             "latest_date": None,
             "missing_symbols": symbols,
+            "age_days": None,
+            "stale": True,
         }
 
     present_symbols = sorted(frame["sym"].dropna().astype(str).str.upper().unique()) if "sym" in frame.columns else []
@@ -431,6 +447,7 @@ def _storage_frame_diagnostics(load_frame, symbols: list[str]) -> dict:
         "symbols": len(present_symbols),
         "latest_date": latest_date,
         "missing_symbols": sorted(set(symbols) - set(present_symbols)),
+        **_freshness_fields(latest_date, reference),
     }
 
 
