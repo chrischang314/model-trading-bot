@@ -10,7 +10,7 @@
 
 ## Verification
 
-Run from this worktree:
+Completed from this worktree on 2026-05-21:
 
 ```powershell
 cd C:\Users\chris\Projects\model-trading-bot-implementer-b-2026-05-21-strategy-compare\backend
@@ -18,7 +18,12 @@ $env:STORAGE_BACKEND="local"
 C:\Users\chris\Projects\model-trading-bot\.venv\Scripts\python.exe -m pytest tests
 ```
 
-For frontend checks, use a real Node executable rather than the WindowsApps shim. Install frontend dependencies in this worktree with the repo lockfile before running the build.
+- Backend tests: `7 passed`.
+- Frontend build: `pnpm run build` passed using `pnpm@11.1.1` and `C:\Users\chris\AppData\Local\OpenAI\Codex\bin\node.exe`.
+- Local API smoke: `POST /api/backtests/compare` returned sorted comparison rows for AAPL.
+- Browser checks: desktop Backtesting Compare populated 5 strategy rows; mobile smoke navigated Home, Stock, Signals, and Backtesting, then ran Backtest and Compare without console errors.
+
+For future frontend checks, use a real Node executable rather than the WindowsApps shim. Install frontend dependencies in this worktree with the repo lockfile before running the build.
 
 ## Notes
 
