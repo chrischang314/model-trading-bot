@@ -58,6 +58,7 @@ import type {
   BacktestComparison,
   BacktestResult,
   CustomStrategyConfig,
+  DiagnosticsFrame,
   OverviewRow,
   PaperSnapshot,
   SignalCatalogItem,
@@ -834,7 +835,9 @@ function HomePage({
 }
 
 function DiagnosticsPanel({ diagnostics, universe }: { diagnostics: SystemDiagnostics | null; universe: UniverseResponse | null }) {
+  const barDate = diagnostics?.bars.latest_date;
   const signalDate = diagnostics?.signals.latest_date;
+  const missingBars = diagnostics?.bars.missing_symbols.length ?? 0;
   const missingSignals = diagnostics?.signals.missing_symbols.length ?? 0;
   const universeCount = diagnostics?.universe.count ?? universe?.count ?? 0;
   const universeDate = diagnostics?.universe.as_of ?? universe?.as_of ?? null;
@@ -856,10 +859,17 @@ function DiagnosticsPanel({ diagnostics, universe }: { diagnostics: SystemDiagno
         </div>
       </div>
       <div className="diagnosticItem">
-        <span className={`statusDot ${signalDate && missingSignals === 0 ? "ok" : "warn"}`} />
+        <span className={`statusDot ${barDate && missingBars === 0 && !diagnostics?.bars.stale ? "ok" : "warn"}`} />
+        <div>
+          <strong>Market Data</strong>
+          <small>{frameFreshnessCopy(diagnostics?.bars, "bar rows")}</small>
+        </div>
+      </div>
+      <div className="diagnosticItem">
+        <span className={`statusDot ${signalDate && missingSignals === 0 && !diagnostics?.signals.stale ? "ok" : "warn"}`} />
         <div>
           <strong>Signals</strong>
-          <small>{signalDate ? `${diagnostics?.signals.rows ?? 0} rows through ${shortDate(signalDate)}` : "no signal rows yet"}</small>
+          <small>{frameFreshnessCopy(diagnostics?.signals, "signal rows")}</small>
         </div>
       </div>
       <div className="diagnosticItem">
@@ -2192,9 +2202,31 @@ function useViewportQuery(query: string) {
   return matches;
 }
 
+function frameFreshnessCopy(frame: DiagnosticsFrame | null | undefined, rowLabel: string) {
+  if (!frame) {
+    return "Loading";
+  }
+  if (!frame.ok) {
+    return frame.error ? `check failed: ${frame.error}` : "check failed";
+  }
+  if (!frame.latest_date) {
+    return `no ${rowLabel} yet`;
+  }
+  const age = frame.age_days;
+  const ageCopy = typeof age === "number" ? `${age}d old` : "age unknown";
+  const freshness = frame.stale ? `stale, ${ageCopy}` : `fresh, ${ageCopy}`;
+  const missing = frame.missing_symbols.length ? `, missing ${frame.missing_symbols.join(", ")}` : "";
+  return `${frame.rows} rows through ${shortDate(frame.latest_date)}; ${freshness}${missing}`;
+}
+
 function shortDate(value: string | null | undefined) {
   if (!value) {
     return "-";
+  }
+  const dateOnly = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+  if (dateOnly) {
+    const [, year, month, day] = dateOnly;
+    return new Date(Number(year), Number(month) - 1, Number(day)).toLocaleDateString();
   }
   const parsed = new Date(value);
   return Number.isNaN(parsed.getTime()) ? "-" : parsed.toLocaleDateString();

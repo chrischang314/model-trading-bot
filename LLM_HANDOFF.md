@@ -87,7 +87,7 @@ Main API routes:
 - `GET /api/signals/catalog`
 - `GET /api/signals/latest`
 - `GET /api/explain/{symbol}`
-- `GET /api/diagnostics`
+- `GET /api/diagnostics`, including `age_days` and `stale` for bar and signal frames
 - `GET /api/universe/sp500`
 - `POST /api/universe/sp500/refresh`
 - `GET /api/overview`
@@ -178,7 +178,7 @@ Dashboard capabilities:
 - Global strategy selector
 - Four pages: Home, Stock, Signals, Backtesting
 - Home page Trading System Walkthrough with interactive data/signals/strategy/backtest/paper stages and live readouts
-- Home page Operations snapshot that surfaces storage health, shared-login health, latest signal date, and S&P 500 cache status from `/api/diagnostics`
+- Home page Operations snapshot that surfaces storage health, shared-login health, bar/signal freshness, and S&P 500 cache status from `/api/diagnostics`
 - Interactive price chart with range selection, SMA/Bollinger/Keltner/position layer toggles, hover tooltips, brush zoom, and principle cards
 - MACD chart
 - RSI chart

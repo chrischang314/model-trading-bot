@@ -19,8 +19,11 @@ Use `GET /api/diagnostics` or the Home page Operations panel for a quick health 
 
 - Storage shows whether the configured storage backend is reachable.
 - Shared Login shows whether the shared local auth database can initialize.
-- Signals shows the latest stored signal date and whether watched symbols are missing rows.
+- Market Data shows the latest stored bar date, row age, stale status, and whether watched symbols are missing rows.
+- Signals shows the latest calculated signal date, row age, stale status, and whether watched symbols are missing rows.
 - S&P Cache shows whether the cached S&P 500 universe exists and whether it is stale.
+
+Bars and signals are marked stale after more than three calendar days without a latest row. This keeps weekday outages visible while avoiding weekend-only false alarms.
 
 The diagnostics endpoint must not trigger an S&P 500 internet refresh. Manual refresh still belongs to `POST /api/universe/sp500/refresh` or the S&P 500 button in the dashboard.
 

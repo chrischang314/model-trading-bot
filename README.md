@@ -78,6 +78,7 @@ cd backend
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
 pip install -r requirements.txt -r requirements-dev.txt
+python -m playwright install chromium
 $env:STORAGE_BACKEND="local"
 uvicorn app.main:app --reload --port 8000
 ```
@@ -133,7 +134,7 @@ The signal set is influenced by classic technical-analysis and momentum literatu
 
 ## Operations Snapshot
 
-The Home page includes an Operations panel backed by `GET /api/diagnostics`. It shows whether local storage and shared login are healthy, how current the stored signal rows are, and whether the cached S&P 500 universe is available or stale. The diagnostics endpoint reads the existing universe cache status without forcing an internet refresh, so loading the dashboard stays fast even when Wikipedia or the network is unavailable.
+The Home page includes an Operations panel backed by `GET /api/diagnostics`. It shows whether local storage and shared login are healthy, whether stored market bars and calculated signals are fresh or stale, and whether the cached S&P 500 universe is available or stale. Bar and signal freshness uses the latest stored row date plus a three-day calendar tolerance so weekends do not immediately create noisy alerts. The diagnostics endpoint reads the existing universe cache status without forcing an internet refresh, so loading the dashboard stays fast even when Wikipedia or the network is unavailable.
 
 ## Kubernetes
 

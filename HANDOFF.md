@@ -2,30 +2,27 @@
 
 ## Current Candidate
 
-- Branch/worktree: `projects-lan-implementer-b-2026-05-21-strategy-compare` at `C:\Users\chris\Projects\model-trading-bot-implementer-b-2026-05-21-strategy-compare`
-- Feature: Backtesting strategy comparison.
+- Branch/worktree: merged into `main` from strategy-compare and data-freshness candidates.
+- Feature: Backtesting strategy comparison plus diagnostics freshness status.
 - Backend: `POST /api/backtests/compare` compares up to 8 strategy IDs on one symbol and returns compact sorted metric summaries.
+- Backend: `GET /api/diagnostics` reports `age_days` and `stale` for bar and signal frames.
 - Frontend: Backtesting page has a Strategy Comparison panel that compares built-ins and includes the active custom or saved strategy when selected.
+- Frontend: The Home page Operations panel separates Market Data from Signals and shows fresh/stale age text for both.
 - Tooling: `frontend/pnpm-workspace.yaml` approves the `esbuild` build script needed by Vite under pnpm 11.
 
 ## Verification
 
-Completed from this worktree on 2026-05-21:
+- Run backend tests from `backend/` with `..\.venv\Scripts\python.exe -m pytest`.
+- Install browser-check tooling with `..\.venv\Scripts\python.exe -m pip install -r requirements-dev.txt` and `..\.venv\Scripts\python.exe -m playwright install chromium`.
+- Run the frontend build from `frontend/` with an available Node binary, for example:
 
 ```powershell
-cd C:\Users\chris\Projects\model-trading-bot-implementer-b-2026-05-21-strategy-compare\backend
-$env:STORAGE_BACKEND="local"
-C:\Users\chris\Projects\model-trading-bot\.venv\Scripts\python.exe -m pytest tests
+$node = 'C:\Users\chris\AppData\Local\OpenAI\Codex\bin\node.exe'
+& $node .\node_modules\typescript\bin\tsc -b
+& $node .\node_modules\vite\bin\vite.js build
 ```
-
-- Backend tests: `7 passed`.
-- Frontend build: `pnpm run build` passed using `pnpm@11.1.1` and `C:\Users\chris\AppData\Local\OpenAI\Codex\bin\node.exe`.
-- Local API smoke: `POST /api/backtests/compare` returned sorted comparison rows for AAPL.
-- Browser checks: desktop Backtesting Compare populated 5 strategy rows; mobile smoke navigated Home, Stock, Signals, and Backtesting, then ran Backtest and Compare without console errors.
-
-For future frontend checks, use a real Node executable rather than the WindowsApps shim. Install frontend dependencies in this worktree with the repo lockfile before running the build.
 
 ## Notes
 
-- The original `C:\Users\chris\Projects\model-trading-bot` working directory currently has separate implementer-C data-freshness edits; do not overwrite them when judging.
-- No deployment has been performed from this candidate branch yet.
+- Bars and signals become stale after more than three calendar days without a latest row.
+- No deployment has been performed from these candidate branches yet.

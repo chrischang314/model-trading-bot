@@ -251,6 +251,8 @@ export type DiagnosticsFrame = {
   symbols: number;
   latest_date: string | null;
   missing_symbols: string[];
+  age_days: number | null;
+  stale: boolean;
   error?: string;
 };
 
