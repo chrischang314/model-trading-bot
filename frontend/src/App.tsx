@@ -938,6 +938,10 @@ function StockPage({
   strategy: StrategyInfo | null;
   scoreTone: string;
 }) {
+  const isCompactViewport = useViewportQuery("(max-width: 720px)");
+  const indicatorChartMargin = isCompactViewport ? { top: 8, right: 4, bottom: 0, left: 0 } : { top: 8, right: 8, bottom: 0, left: 0 };
+  const indicatorAxisWidth = isCompactViewport ? 36 : 48;
+
   return (
     <>
       <section className="metricsGrid">
@@ -963,10 +967,10 @@ function StockPage({
           <PriceChart series={series} latest={latest} />
         </div>
         <IndicatorChart title="MACD" value={fmt(latest?.macd_hist)}>
-          <ComposedChart data={series} margin={{ top: 8, right: 8, bottom: 0, left: 0 }}>
+          <ComposedChart data={series} margin={indicatorChartMargin}>
             <CartesianGrid stroke="#e6e8ec" vertical={false} />
             <XAxis dataKey="date" hide />
-            <YAxis width={48} tickLine={false} axisLine={false} />
+            <YAxis width={indicatorAxisWidth} tickLine={false} axisLine={false} />
             <Tooltip formatter={(value) => (typeof value === "number" ? value.toFixed(3) : value)} />
             <ReferenceLine y={0} stroke="#9ca3af" />
             <Bar dataKey="macd_hist" fill="#9ca3af" barSize={3} />
@@ -1142,7 +1146,11 @@ function SignalTrendExplorer({
     .map((key) => options.find((option) => option.key === key))
     .filter((option): option is SignalTrendOption => Boolean(option));
   const chartData = useMemo(() => buildSignalTrendData(series, selectedKeys, scale), [series, selectedKeys, scale]);
+  const isCompactViewport = useViewportQuery("(max-width: 720px)");
   const legendHeight = selectedOptions.length > 20 ? 84 : selectedOptions.length > 10 ? 58 : 32;
+  const chartMargin = isCompactViewport ? { top: 10, right: 4, bottom: 0, left: 0 } : { top: 12, right: 16, bottom: 0, left: 0 };
+  const chartTickGap = isCompactViewport ? 48 : 32;
+  const mainAxisWidth = isCompactViewport ? 48 : 64;
 
   function toggleSignal(key: string) {
     setSelectedKeys((current) => {
@@ -1225,10 +1233,10 @@ function SignalTrendExplorer({
 
       <div className="chartBox signalTrendChart" data-testid="signal-trend-chart">
         <ResponsiveContainer>
-          <LineChart data={chartData} margin={{ top: 12, right: 16, bottom: 0, left: 0 }}>
+          <LineChart data={chartData} margin={chartMargin}>
             <CartesianGrid stroke="#e6e8ec" vertical={false} />
-            <XAxis dataKey="date" minTickGap={32} tickLine={false} axisLine={false} />
-            <YAxis yAxisId="main" width={64} domain={scale === "normalized" ? [0, 100] : ["auto", "auto"]} tickLine={false} axisLine={false} />
+            <XAxis dataKey="date" minTickGap={chartTickGap} tickLine={false} axisLine={false} interval="preserveStartEnd" />
+            <YAxis yAxisId="main" width={mainAxisWidth} domain={scale === "normalized" ? [0, 100] : ["auto", "auto"]} tickLine={false} axisLine={false} />
             <YAxis yAxisId="position" orientation="right" hide domain={[0, 8]} />
             <Tooltip content={<SignalTrendTooltip scale={scale} options={selectedOptions} />} />
             <Legend verticalAlign="top" height={legendHeight} />
@@ -1566,10 +1574,14 @@ function StrategyControlPanel({
 function PriceChart({ series, latest }: { series: SignalPoint[]; latest: OverviewRow | undefined }) {
   const [range, setRange] = useState<PriceRangeLabel>("1Y");
   const [activeLayers, setActiveLayers] = useState<PriceLayerKey[]>(["close", "sma20", "sma50", "sma200", "position"]);
+  const isCompactViewport = useViewportQuery("(max-width: 720px)");
   const activeLayerSet = useMemo(() => new Set(activeLayers), [activeLayers]);
   const rangeDays = PRICE_RANGE_OPTIONS.find(([label]) => label === range)?.[1] ?? null;
   const chartData = useMemo(() => (rangeDays == null ? series : series.slice(-rangeDays)), [rangeDays, series]);
   const priceDomain = useMemo(() => buildPriceDomain(chartData, activeLayerSet), [activeLayerSet, chartData]);
+  const chartMargin = isCompactViewport ? { top: 10, right: 4, bottom: 0, left: 0 } : { top: 12, right: 12, bottom: 0, left: 0 };
+  const priceAxisWidth = isCompactViewport ? 46 : 72;
+  const chartTickGap = isCompactViewport ? 48 : 32;
   const latestPoint = chartData[chartData.length - 1];
   const trendState =
     latest?.close != null && latest?.sma_20 != null ? (latest.close >= latest.sma_20 ? "Above SMA 20" : "Below SMA 20") : "Trend pending";
@@ -1612,10 +1624,16 @@ function PriceChart({ series, latest }: { series: SignalPoint[]; latest: Overvie
       </div>
       <div className="chartBox tall interactiveChart" data-testid="price-chart">
         <ResponsiveContainer>
-          <ComposedChart data={chartData} margin={{ top: 12, right: 12, bottom: 0, left: 0 }}>
+          <ComposedChart data={chartData} margin={chartMargin}>
             <CartesianGrid stroke="#e6e8ec" vertical={false} />
-            <XAxis dataKey="date" minTickGap={32} tickLine={false} axisLine={false} />
-            <YAxis width={72} tickFormatter={(value) => money.format(Number(value))} tickLine={false} axisLine={false} domain={priceDomain} />
+            <XAxis dataKey="date" minTickGap={chartTickGap} tickLine={false} axisLine={false} interval="preserveStartEnd" />
+            <YAxis
+              width={priceAxisWidth}
+              tickFormatter={(value) => (isCompactViewport ? compact.format(Number(value)) : money.format(Number(value)))}
+              tickLine={false}
+              axisLine={false}
+              domain={priceDomain}
+            />
             <YAxis yAxisId="position" orientation="right" hide domain={[0, 8]} />
             <Tooltip content={<PriceTooltip />} />
             <Legend verticalAlign="top" height={32} />
@@ -1685,11 +1703,15 @@ function OscillatorChart({
   width?: number;
   height?: number;
 }) {
+  const isCompactViewport = useViewportQuery("(max-width: 720px)");
+  const chartMargin = isCompactViewport ? { top: 8, right: 4, bottom: 0, left: 0 } : { top: 8, right: 8, bottom: 0, left: 0 };
+  const axisWidth = isCompactViewport ? 34 : 42;
+
   return (
-    <LineChart width={width} height={height} data={data} margin={{ top: 8, right: 8, bottom: 0, left: 0 }}>
+    <LineChart width={width} height={height} data={data} margin={chartMargin}>
       <CartesianGrid stroke="#e6e8ec" vertical={false} />
       <XAxis dataKey="date" hide />
-      <YAxis width={42} domain={[0, 100]} tickLine={false} axisLine={false} />
+      <YAxis width={axisWidth} domain={[0, 100]} tickLine={false} axisLine={false} />
       <Tooltip formatter={(value) => (typeof value === "number" ? value.toFixed(1) : value)} />
       <ReferenceLine y={high} stroke="#dc2626" strokeDasharray="4 4" />
       <ReferenceLine y={low} stroke="#16a34a" strokeDasharray="4 4" />
@@ -1732,7 +1754,12 @@ function AlgorithmPanel({ latest, strategy }: { latest: OverviewRow | undefined;
 
 function EquityChart({ backtest, compactMode = false }: { backtest: BacktestResult | null; compactMode?: boolean }) {
   const [activeLayers, setActiveLayers] = useState<EquityLayerKey[]>(compactMode ? ["equity", "benchmark"] : ["equity", "benchmark", "drawdown"]);
+  const isCompactViewport = useViewportQuery("(max-width: 720px)");
   const activeLayerSet = useMemo(() => new Set(activeLayers), [activeLayers]);
+  const chartMargin = isCompactViewport ? { top: 8, right: 4, bottom: compactMode ? 0 : 2, left: 0 } : { top: 8, right: 8, bottom: compactMode ? 0 : 2, left: 0 };
+  const chartTickGap = isCompactViewport ? 48 : 32;
+  const equityAxisWidth = isCompactViewport ? 52 : 70;
+  const drawdownAxisWidth = isCompactViewport ? 44 : 54;
 
   function toggleLayer(key: EquityLayerKey) {
     setActiveLayers((current) => {
@@ -1764,11 +1791,11 @@ function EquityChart({ backtest, compactMode = false }: { backtest: BacktestResu
       ) : null}
       <div className={`chartBox ${compactMode ? "" : "tall interactiveChart"}`} data-testid={compactMode ? undefined : "equity-chart"}>
         <ResponsiveContainer>
-          <LineChart data={backtest?.equity_curve ?? []} margin={{ top: 8, right: 8, bottom: compactMode ? 0 : 2, left: 0 }}>
+          <LineChart data={backtest?.equity_curve ?? []} margin={chartMargin}>
             <CartesianGrid stroke="#e6e8ec" vertical={false} />
-            <XAxis dataKey="date" minTickGap={32} tickLine={false} axisLine={false} />
-            <YAxis yAxisId="equity" width={70} tickFormatter={(value) => compact.format(value)} tickLine={false} axisLine={false} />
-            {activeLayerSet.has("drawdown") ? <YAxis yAxisId="drawdown" orientation="right" width={54} tickFormatter={(value) => pct.format(Number(value))} tickLine={false} axisLine={false} /> : null}
+            <XAxis dataKey="date" minTickGap={chartTickGap} tickLine={false} axisLine={false} interval="preserveStartEnd" />
+            <YAxis yAxisId="equity" width={equityAxisWidth} tickFormatter={(value) => compact.format(value)} tickLine={false} axisLine={false} />
+            {activeLayerSet.has("drawdown") ? <YAxis yAxisId="drawdown" orientation="right" width={drawdownAxisWidth} tickFormatter={(value) => pct.format(Number(value))} tickLine={false} axisLine={false} /> : null}
             <YAxis yAxisId="position" orientation="right" hide domain={[0, 8]} />
             <Tooltip
               formatter={(value, name) => {
@@ -2032,6 +2059,25 @@ function buildSignalTrendData(series: SignalPoint[], selectedKeys: string[], sca
 
 function numericSignal(value: SignalValue | undefined) {
   return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+function useViewportQuery(query: string) {
+  const [matches, setMatches] = useState(() => (typeof window === "undefined" ? false : window.matchMedia(query).matches));
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return undefined;
+    }
+
+    const mediaQuery = window.matchMedia(query);
+    const handleChange = () => setMatches(mediaQuery.matches);
+
+    handleChange();
+    mediaQuery.addEventListener("change", handleChange);
+    return () => mediaQuery.removeEventListener("change", handleChange);
+  }, [query]);
+
+  return matches;
 }
 
 function shortDate(value: string | null | undefined) {
