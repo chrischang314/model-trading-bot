@@ -142,6 +142,14 @@ export type BacktestResult = {
   }>;
 };
 
+export type BacktestComparison = {
+  symbol: string;
+  metrics: Record<string, number | null>;
+  strategy: StrategyInfo;
+  final_equity: number;
+  trade_count: number;
+};
+
 export type PaperSnapshot = {
   cash: number;
   equity: number;

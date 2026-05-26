@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import pandas as pd
+from fastapi.testclient import TestClient
 
+import app.main as main_module
 from app.services.backtest import run_long_cash_backtest
 from app.services.signals import calculate_signals
 
@@ -32,3 +34,50 @@ def test_backtest_returns_metrics_equity_and_trades() -> None:
     assert not result.equity_curve.empty
     assert result.equity_curve["equity"].iloc[-1] > 0
 
+
+class CompareFakeStorage:
+    def get_signals(self, symbols: list[str] | None = None, start=None, end=None) -> pd.DataFrame:
+        dates = pd.date_range("2024-01-01", periods=280, freq="D")
+        close = [100 + i * 0.25 for i in range(280)]
+        bars = pd.DataFrame(
+            {
+                "date": dates,
+                "sym": symbols[0] if symbols else "AAPL",
+                "open": close,
+                "high": [price + 1 for price in close],
+                "low": [price - 1 for price in close],
+                "close": close,
+                "adj_close": close,
+                "volume": 1_000_000,
+                "source": "test",
+            }
+        )
+        return calculate_signals(bars)
+
+
+class CompareFakeAuthStore:
+    def get_or_create_user(self, username: str) -> dict:
+        return {
+            "id": 1,
+            "username": username,
+            "created_at": "2026-05-21T00:00:00+00:00",
+            "updated_at": "2026-05-21T00:00:00+00:00",
+        }
+
+
+def test_backtest_compare_endpoint_returns_sorted_strategy_summaries(monkeypatch) -> None:
+    monkeypatch.setattr(main_module, "storage", CompareFakeStorage())
+    monkeypatch.setattr(main_module, "auth_store", CompareFakeAuthStore())
+
+    response = TestClient(main_module.app).post(
+        "/api/backtests/compare",
+        json={"symbol": "AAPL", "strategy_ids": ["multi_factor_scorecard", "trend_breakout"], "initial_capital": 10_000},
+    )
+
+    assert response.status_code == 200
+    data = response.json()["data"]
+    assert data["symbol"] == "AAPL"
+    assert [item["strategy"]["id"] for item in data["comparisons"]] == ["multi_factor_scorecard", "trend_breakout"]
+    assert data["comparisons"][0]["final_equity"] > 0
+    assert "total_return" in data["comparisons"][0]["metrics"]
+    assert "equity_curve" not in data["comparisons"][0]

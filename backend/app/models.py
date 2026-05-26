@@ -51,6 +51,17 @@ class BacktestRequest(BaseModel):
     custom_strategy: CustomStrategyRequest | None = None
 
 
+class BacktestComparisonRequest(BaseModel):
+    symbol: str
+    strategy_ids: list[str] | None = Field(default=None, max_length=8)
+    start: date | None = None
+    end: date | None = None
+    initial_capital: float = 100_000
+    fee_bps: float = 1.0
+    slippage_bps: float = 2.0
+    custom_strategy: CustomStrategyRequest | None = None
+
+
 class PaperRequest(BaseModel):
     symbols: list[str] | None = None
     cash: float = 100_000

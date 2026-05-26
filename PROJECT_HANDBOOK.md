@@ -10,6 +10,7 @@ Model Trading Bot is an educational market-data stack. It does not place real tr
 - Signals are calculated indicator rows such as moving averages, RSI, volatility, momentum, and a combined score.
 - Strategies turn signal rows into a long-or-cash position rule.
 - Backtests replay those positions with simple costs and compare them with buy-and-hold.
+- Strategy comparisons run several long/cash rules on the same symbol and assumptions so return, drawdown, Sharpe, exposure, and trade count can be compared without changing pages.
 - Paper snapshots turn the latest strategy result into a simulated portfolio without sending orders.
 
 ## Operational Checks

@@ -93,6 +93,7 @@ Main API routes:
 - `GET /api/overview`
 - `GET /api/timeseries/{symbol}`
 - `POST /api/backtests`
+- `POST /api/backtests/compare`
 - `POST /api/paper/run`
 - `GET /api/paper/portfolio`
 
@@ -187,6 +188,7 @@ Dashboard capabilities:
 - Expandable signal catalog and latest full signal matrix
 - Backtest equity chart with strategy/benchmark/drawdown/position layer toggles and brush zoom
 - Trade Anatomy panel for stepping through simulated trade events and the backtest accounting flow
+- Strategy Comparison panel on Backtesting that calls `/api/backtests/compare` for a compact built-in/custom strategy leaderboard
 - Custom strategy scorecard builder on the Backtesting page
 - Paper orders/equity snapshot
 

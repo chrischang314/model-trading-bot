@@ -8,7 +8,17 @@ from fastapi import Depends, FastAPI, Header, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import settings
-from app.models import ApiEnvelope, BacktestRequest, IngestRequest, IngestResponse, LoginRequest, PaperRequest, SaveStrategyRequest, SymbolRequest
+from app.models import (
+    ApiEnvelope,
+    BacktestComparisonRequest,
+    BacktestRequest,
+    IngestRequest,
+    IngestResponse,
+    LoginRequest,
+    PaperRequest,
+    SaveStrategyRequest,
+    SymbolRequest,
+)
 from app.services.auth import SharedAuthStore
 from app.services.backtest import run_long_cash_backtest
 from app.services.data_provider import create_provider
@@ -317,32 +327,100 @@ def timeseries(
 
 @app.post("/api/backtests", response_model=ApiEnvelope)
 def backtest(request: BacktestRequest, current_user: dict = Depends(_current_user)) -> ApiEnvelope:
-    symbol = normalize_symbols([request.symbol])[0]
-    signals = storage.get_signals(symbols=[symbol], start=request.start, end=request.end)
-    if signals.empty and settings.auto_ingest_on_empty:
-        run_ingestion(IngestRequest(symbols=[symbol], start=request.start, end=request.end))
-        signals = storage.get_signals(symbols=[symbol], start=request.start, end=request.end)
+    _, signals = _load_backtest_signals(request.symbol, request.start, request.end)
     custom_strategy = request.custom_strategy.model_dump() if request.custom_strategy else None
-    strategy_id, custom_strategy, metadata = _resolve_requested_strategy(request.strategy_id, custom_strategy, current_user)
-    signals = apply_strategy(signals, strategy_id, custom_strategy)
     try:
-        result = run_long_cash_backtest(
-            signals,
-            initial_capital=request.initial_capital,
-            fee_bps=request.fee_bps,
-            slippage_bps=request.slippage_bps,
+        return ApiEnvelope(
+            data=_backtest_payload(
+                signals,
+                request.strategy_id,
+                custom_strategy,
+                current_user,
+                request.initial_capital,
+                request.fee_bps,
+                request.slippage_bps,
+                include_details=True,
+            )
         )
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@app.post("/api/backtests/compare", response_model=ApiEnvelope)
+def compare_backtests(request: BacktestComparisonRequest, current_user: dict = Depends(_current_user)) -> ApiEnvelope:
+    symbol, signals = _load_backtest_signals(request.symbol, request.start, request.end)
+    requested_ids = request.strategy_ids or [item["id"] for item in list_strategies() if item["kind"] == "built_in"]
+    strategy_ids = list(dict.fromkeys(strategy_id.strip() for strategy_id in requested_ids if strategy_id.strip()))
+    if not strategy_ids:
+        raise HTTPException(status_code=400, detail="Choose at least one strategy to compare.")
+    if len(strategy_ids) > 8:
+        raise HTTPException(status_code=400, detail="Compare up to 8 strategies at a time.")
+
+    custom_strategy = request.custom_strategy.model_dump() if request.custom_strategy else None
+    comparisons = []
+    try:
+        for strategy_id in strategy_ids:
+            comparisons.append(
+                _backtest_payload(
+                    signals,
+                    strategy_id,
+                    custom_strategy if strategy_id == CUSTOM_STRATEGY_ID else None,
+                    current_user,
+                    request.initial_capital,
+                    request.fee_bps,
+                    request.slippage_bps,
+                    include_details=False,
+                )
+            )
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
     return ApiEnvelope(
         data={
-            "symbol": result.symbol,
-            "metrics": result.metrics,
-            "equity_curve": clean_records(result.equity_curve),
-            "trades": clean_records(result.trades),
-            "strategy": metadata,
+            "symbol": symbol,
+            "comparisons": sorted(comparisons, key=lambda item: item["metrics"].get("total_return") or 0, reverse=True),
         }
     )
+
+
+def _load_backtest_signals(symbol: str, start: date | None, end: date | None) -> tuple[str, pd.DataFrame]:
+    clean_symbol = normalize_symbols([symbol])[0]
+    signals = storage.get_signals(symbols=[clean_symbol], start=start, end=end)
+    if signals.empty and settings.auto_ingest_on_empty:
+        run_ingestion(IngestRequest(symbols=[clean_symbol], start=start, end=end))
+        signals = storage.get_signals(symbols=[clean_symbol], start=start, end=end)
+    return clean_symbol, signals
+
+
+def _backtest_payload(
+    signals: pd.DataFrame,
+    strategy_id: str,
+    custom_strategy: dict | None,
+    current_user: dict,
+    initial_capital: float,
+    fee_bps: float,
+    slippage_bps: float,
+    include_details: bool,
+) -> dict:
+    resolved_strategy_id, resolved_custom_strategy, metadata = _resolve_requested_strategy(strategy_id, custom_strategy, current_user)
+    result = run_long_cash_backtest(
+        apply_strategy(signals, resolved_strategy_id, resolved_custom_strategy),
+        initial_capital=initial_capital,
+        fee_bps=fee_bps,
+        slippage_bps=slippage_bps,
+    )
+    payload = {
+        "symbol": result.symbol,
+        "metrics": result.metrics,
+        "strategy": metadata,
+    }
+    if include_details:
+        payload["equity_curve"] = clean_records(result.equity_curve)
+        payload["trades"] = clean_records(result.trades)
+    else:
+        payload["final_equity"] = float(result.equity_curve["equity"].iloc[-1])
+        payload["trade_count"] = int(len(result.trades))
+    return payload
 
 
 @app.post("/api/paper/run", response_model=ApiEnvelope)
