@@ -21,7 +21,7 @@ from app.models import (
 )
 from app.services.auth import SharedAuthStore
 from app.services.backtest import run_long_cash_backtest
-from app.services.data_provider import create_provider
+from app.services.data_provider import MarketDataProviderError, NoMarketDataError, create_provider
 from app.services.paper import run_paper_snapshot
 from app.services.signals import SIGNAL_CATALOG, calculate_signals
 from app.services.strategies import CUSTOM_STRATEGY_ID, DEFAULT_STRATEGY_ID, apply_strategy, get_strategy_metadata, list_strategies
@@ -248,10 +248,10 @@ def explain(symbol: str, strategy_context: tuple[str, dict | None] = Depends(_st
     clean_symbol = normalize_symbols([symbol])[0]
     signals = storage.get_signals(symbols=[clean_symbol])
     if signals.empty and settings.auto_ingest_on_empty:
-        run_ingestion(IngestRequest(symbols=[clean_symbol], period="2y"))
+        _run_auto_ingestion_or_404([clean_symbol], IngestRequest(symbols=[clean_symbol], period="2y"))
         signals = storage.get_signals(symbols=[clean_symbol])
     if signals.empty:
-        raise HTTPException(status_code=404, detail=f"No signals available for {clean_symbol}")
+        _raise_no_market_data([clean_symbol])
     signals = apply_strategy(signals, strategy_id, custom_strategy)
     latest = clean_records(signals.sort_values("date").tail(1))[0]
     components = []
@@ -322,8 +322,10 @@ def timeseries(
     clean_symbol = normalize_symbols([symbol])[0]
     signals = storage.get_signals(symbols=[clean_symbol], start=start, end=end)
     if signals.empty and settings.auto_ingest_on_empty:
-        run_ingestion(IngestRequest(symbols=[clean_symbol], period="2y"))
+        _run_auto_ingestion_or_404([clean_symbol], IngestRequest(symbols=[clean_symbol], period="2y"))
         signals = storage.get_signals(symbols=[clean_symbol], start=start, end=end)
+    if signals.empty:
+        _raise_no_market_data([clean_symbol])
     signals = apply_strategy(signals, strategy_id, custom_strategy)
     return ApiEnvelope(data=clean_records(signals))
 
@@ -390,8 +392,10 @@ def _load_backtest_signals(symbol: str, start: date | None, end: date | None) ->
     clean_symbol = normalize_symbols([symbol])[0]
     signals = storage.get_signals(symbols=[clean_symbol], start=start, end=end)
     if signals.empty and settings.auto_ingest_on_empty:
-        run_ingestion(IngestRequest(symbols=[clean_symbol], start=start, end=end))
+        _run_auto_ingestion_or_404([clean_symbol], IngestRequest(symbols=[clean_symbol], start=start, end=end))
         signals = storage.get_signals(symbols=[clean_symbol], start=start, end=end)
+    if signals.empty:
+        _raise_no_market_data([clean_symbol])
     return clean_symbol, signals
 
 
@@ -468,6 +472,23 @@ def _signals_or_bootstrap(
         run_ingestion(IngestRequest(symbols=symbols, period="2y"))
         signals = storage.get_signals(symbols=symbols)
     return apply_strategy(signals, strategy_id, custom_strategy)
+
+
+def _run_auto_ingestion_or_404(symbols: list[str], request: IngestRequest) -> None:
+    try:
+        run_ingestion(request)
+    except NoMarketDataError as exc:
+        _raise_no_market_data(symbols, exc)
+    except MarketDataProviderError as exc:
+        raise HTTPException(status_code=502, detail=f"Market data provider failed: {exc}") from exc
+
+
+def _raise_no_market_data(symbols: list[str], exc: Exception | None = None) -> None:
+    symbol_text = ", ".join(symbols)
+    detail = f"No market data available for {symbol_text}."
+    if exc is not None:
+        detail = f"{detail} Provider detail: {exc}"
+    raise HTTPException(status_code=404, detail=detail)
 
 
 def _available_symbols() -> list[str]:

@@ -5,6 +5,7 @@ from fastapi.testclient import TestClient
 
 import app.main as main_module
 from app.services.backtest import run_long_cash_backtest
+from app.services.data_provider import MarketDataProviderError, NoMarketDataError
 from app.services.signals import calculate_signals
 
 
@@ -55,6 +56,11 @@ class CompareFakeStorage:
         return calculate_signals(bars)
 
 
+class EmptySignalStorage:
+    def get_signals(self, symbols: list[str] | None = None, start=None, end=None) -> pd.DataFrame:
+        return pd.DataFrame()
+
+
 class CompareFakeAuthStore:
     def get_or_create_user(self, username: str) -> dict:
         return {
@@ -63,6 +69,14 @@ class CompareFakeAuthStore:
             "created_at": "2026-05-21T00:00:00+00:00",
             "updated_at": "2026-05-21T00:00:00+00:00",
         }
+
+
+def fail_ingestion(request) -> None:
+    raise NoMarketDataError("provider returned no rows")
+
+
+def provider_error(request) -> None:
+    raise MarketDataProviderError("upstream timeout")
 
 
 def test_backtest_compare_endpoint_returns_sorted_strategy_summaries(monkeypatch) -> None:
@@ -81,3 +95,47 @@ def test_backtest_compare_endpoint_returns_sorted_strategy_summaries(monkeypatch
     assert data["comparisons"][0]["final_equity"] > 0
     assert "total_return" in data["comparisons"][0]["metrics"]
     assert "equity_curve" not in data["comparisons"][0]
+
+
+def test_explain_unknown_symbol_returns_not_found_when_auto_ingest_fails(monkeypatch) -> None:
+    monkeypatch.setattr(main_module, "storage", EmptySignalStorage())
+    monkeypatch.setattr(main_module, "auth_store", CompareFakeAuthStore())
+    monkeypatch.setattr(main_module, "run_ingestion", fail_ingestion)
+
+    response = TestClient(main_module.app).get("/api/explain/NO_SUCH_SYMBOL_123")
+
+    assert response.status_code == 404
+    assert "No market data available for NO_SUCH_SYMBOL_123" in response.json()["detail"]
+
+
+def test_timeseries_unknown_symbol_returns_not_found_when_auto_ingest_fails(monkeypatch) -> None:
+    monkeypatch.setattr(main_module, "storage", EmptySignalStorage())
+    monkeypatch.setattr(main_module, "auth_store", CompareFakeAuthStore())
+    monkeypatch.setattr(main_module, "run_ingestion", fail_ingestion)
+
+    response = TestClient(main_module.app).get("/api/timeseries/NO_SUCH_SYMBOL_123")
+
+    assert response.status_code == 404
+    assert "No market data available for NO_SUCH_SYMBOL_123" in response.json()["detail"]
+
+
+def test_backtest_unknown_symbol_returns_not_found_when_auto_ingest_fails(monkeypatch) -> None:
+    monkeypatch.setattr(main_module, "storage", EmptySignalStorage())
+    monkeypatch.setattr(main_module, "auth_store", CompareFakeAuthStore())
+    monkeypatch.setattr(main_module, "run_ingestion", fail_ingestion)
+
+    response = TestClient(main_module.app).post("/api/backtests", json={"symbol": "NO_SUCH_SYMBOL_123"})
+
+    assert response.status_code == 404
+    assert "No market data available for NO_SUCH_SYMBOL_123" in response.json()["detail"]
+
+
+def test_explain_provider_error_returns_bad_gateway(monkeypatch) -> None:
+    monkeypatch.setattr(main_module, "storage", EmptySignalStorage())
+    monkeypatch.setattr(main_module, "auth_store", CompareFakeAuthStore())
+    monkeypatch.setattr(main_module, "run_ingestion", provider_error)
+
+    response = TestClient(main_module.app).get("/api/explain/AAPL")
+
+    assert response.status_code == 502
+    assert "Market data provider failed" in response.json()["detail"]

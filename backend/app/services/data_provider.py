@@ -12,6 +12,14 @@ from app.utils import normalize_symbols
 BAR_COLUMNS = ["date", "sym", "open", "high", "low", "close", "adj_close", "volume", "source"]
 
 
+class MarketDataProviderError(RuntimeError):
+    pass
+
+
+class NoMarketDataError(MarketDataProviderError):
+    pass
+
+
 class MarketDataProvider(Protocol):
     def fetch_daily_bars(
         self,
@@ -53,20 +61,23 @@ class YFinanceProvider:
 
         raw = yf.download(**kwargs)
         if raw.empty:
-            raise RuntimeError("yfinance returned no rows")
+            raise NoMarketDataError("yfinance returned no rows")
         frames = [self._normalize_symbol_frame(raw, symbol) for symbol in tickers]
         bars = pd.concat([frame for frame in frames if not frame.empty], ignore_index=True)
         if bars.empty:
-            raise RuntimeError("yfinance response did not contain requested symbols")
+            raise NoMarketDataError("yfinance response did not contain requested symbols")
         return bars[BAR_COLUMNS].sort_values(["sym", "date"]).reset_index(drop=True)
 
     def _normalize_symbol_frame(self, raw: pd.DataFrame, symbol: str) -> pd.DataFrame:
         if isinstance(raw.columns, pd.MultiIndex):
             first_level = set(raw.columns.get_level_values(0))
+            second_level = set(raw.columns.get_level_values(1))
             if symbol in first_level:
                 frame = raw[symbol].copy()
-            else:
+            elif symbol in second_level:
                 frame = raw.xs(symbol, level=1, axis=1).copy()
+            else:
+                return pd.DataFrame(columns=BAR_COLUMNS)
         else:
             frame = raw.copy()
 
@@ -104,7 +115,7 @@ class StooqProvider:
         frames = [self._fetch_symbol(symbol, start, end) for symbol in normalize_symbols(symbols)]
         bars = pd.concat([frame for frame in frames if not frame.empty], ignore_index=True)
         if bars.empty:
-            raise RuntimeError("Stooq returned no rows")
+            raise NoMarketDataError("Stooq returned no rows")
         return bars[BAR_COLUMNS].sort_values(["sym", "date"]).reset_index(drop=True)
 
     def _fetch_symbol(self, symbol: str, start: date | None, end: date | None) -> pd.DataFrame:
@@ -156,12 +167,19 @@ class FallbackProvider:
         period: str = "2y",
     ) -> pd.DataFrame:
         errors = []
+        no_data_errors = []
         for provider in self.providers:
             try:
                 return provider.fetch_daily_bars(symbols, start=start, end=end, period=period)
+            except NoMarketDataError as exc:
+                errors.append(f"{provider.source}: {exc}")
+                no_data_errors.append(exc)
             except Exception as exc:  # pragma: no cover - depends on external providers
                 errors.append(f"{provider.source}: {exc}")
-        raise RuntimeError("; ".join(errors))
+        detail = "; ".join(errors)
+        if len(no_data_errors) == len(self.providers):
+            raise NoMarketDataError(detail)
+        raise MarketDataProviderError(detail)
 
 
 def create_provider(name: str) -> MarketDataProvider:
@@ -172,4 +190,3 @@ def create_provider(name: str) -> MarketDataProvider:
     if name == "fallback":
         return FallbackProvider()
     raise ValueError(f"Unknown data provider: {name}")
-
