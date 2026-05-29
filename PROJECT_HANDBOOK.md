@@ -12,6 +12,7 @@ Model Trading Bot is an educational market-data stack. It does not place real tr
 - Backtests replay those positions with simple costs and compare them with buy-and-hold.
 - Strategy comparisons run several long/cash rules on the same symbol and assumptions so return, drawdown, Sharpe, exposure, and trade count can be compared without changing pages.
 - Paper snapshots turn the latest strategy result into a simulated portfolio without sending orders.
+- Paper run records preserve successful simulation inputs and outputs by local user, making the paper account reviewable over time while keeping it separate from real brokerage execution.
 
 ## Operational Checks
 
@@ -33,4 +34,5 @@ Symbol-specific read endpoints may auto-ingest when local signals are missing. I
 
 - Keep the app clearly educational; do not imply investment advice.
 - Do not add live brokerage execution without explicit risk controls, authentication, audit logs, and user confirmation flows.
+- Loading an old paper run should only replay the stored snapshot in the UI; it must not fetch fresh market data, place orders, or mutate the user's latest saved portfolio.
 - Keep credentials, KDB license files, local data, and generated frontend/backend artifacts out of git.

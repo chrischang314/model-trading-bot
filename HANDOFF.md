@@ -2,20 +2,18 @@
 
 ## Current Candidate
 
-- Branch/worktree: `projects-lan-repair-invalid-symbol` for the Projects LAN invalid-symbol repair.
-- Repair: symbol-specific explain, timeseries, and backtest reads return HTTP 404 with a clear "No market data available" detail when auto-ingest finds no provider rows; pure provider outages return HTTP 502.
-- Feature: Backtesting strategy comparison plus diagnostics freshness status.
-- Backend: `POST /api/backtests/compare` compares up to 8 strategy IDs on one symbol and returns compact sorted metric summaries.
-- Backend: `GET /api/diagnostics` reports `age_days` and `stale` for bar and signal frames.
-- Frontend: Backtesting page has a Strategy Comparison panel that compares built-ins and includes the active custom or saved strategy when selected.
-- Frontend: The Home page Operations panel separates Market Data from Signals and shows fresh/stale age text for both.
-- Tooling: `frontend/pnpm-workspace.yaml` approves the `esbuild` build script needed by Vite under pnpm 11.
+- Branch/worktree: `model-trading-bot-implementer-c-2026-05-29-paper-run-journal` at `C:\Users\chris\Projects\model-trading-bot-implementer-c-2026-05-29-paper-run-journal`.
+- Feature: Paper Trading Run Journal and Replay for the Projects LAN `model-trading-bot` ranked brief.
+- Backend: each successful `POST /api/paper/run` still updates the latest paper portfolio and now appends a user-scoped row in `model_trading_bot_paper_runs`.
+- Backend: `GET /api/paper/runs` returns compact newest-first run summaries; `GET /api/paper/runs/{id}` returns full stored detail scoped to the signed-in user.
+- Backend: account reset clears saved paper runs along with saved scorecards and the latest paper portfolio snapshot.
+- Frontend: Backtesting includes a Paper Run Journal panel with recent runs, full run detail, and a Load Snapshot action that replays stored data into the visible paper view without re-running market data or order logic.
 
 ## Verification
 
-- Run backend tests from `backend/` with `..\.venv\Scripts\python.exe -m pytest`.
-- Install browser-check tooling with `..\.venv\Scripts\python.exe -m pip install -r requirements-dev.txt` and `..\.venv\Scripts\python.exe -m playwright install chromium`.
-- Run the frontend build from `frontend/` with an available Node binary, for example:
+- Backend baseline before edits: `C:\Users\chris\Projects\model-trading-bot\.venv\Scripts\python.exe -m pytest` from `backend/` passed with `15 passed, 2 warnings`.
+- Backend after edits: `C:\Users\chris\Projects\model-trading-bot\.venv\Scripts\python.exe -m pytest` from `backend/` passed with `16 passed, 2 warnings`.
+- Frontend build: linked the ignored `frontend\node_modules` junction to the main checkout dependency directory because `pnpm` is not on PATH in this worktree, then ran:
 
 ```powershell
 $node = 'C:\Users\chris\AppData\Local\OpenAI\Codex\bin\node.exe'
@@ -23,10 +21,15 @@ $node = 'C:\Users\chris\AppData\Local\OpenAI\Codex\bin\node.exe'
 & $node .\node_modules\vite\bin\vite.js build
 ```
 
+- Browser/API smoke: ran local FastAPI on `127.0.0.1:18100` using existing local CSV data and Vite on `127.0.0.1:18180`; Playwright verified login, strategy switch, Backtesting navigation, journal visibility, run detail open, Load Snapshot replay, and `/api/paper/runs` plus `/api/paper/runs/{id}`.
+
+## Deployment Status
+
+- Not deployed to `modeltradingbot.lan` from this implementer candidate. The judge should compare A/B/C implementations, choose one branch, then build/push the selected images and deploy through `container-orchestrator`.
+- No Kubernetes values or image tags were changed in this branch.
+
 ## Notes
 
-- Bars and signals become stale after more than three calendar days without a latest row.
-- Reproduced before the repair: `GET /api/explain/NO_SUCH_SYMBOL_123`, `GET /api/timeseries/NO_SUCH_SYMBOL_123`, and `POST /api/backtests` for `NO_SUCH_SYMBOL_123` returned HTTP 500 on the LAN deployment.
-- `POST /api/symbols` already returned a handled provider error and was left unchanged.
-- The repair intentionally does not convert storage or unexpected application exceptions into invalid-symbol responses.
-- Fallback provider behavior is intentionally asymmetric: a pure provider failure stays `502`, but a mixed "no rows" plus fallback parser/API-key failure is treated as `404` for symbol-specific reads because the primary signal is that the requested symbol has no market data.
+- The run journal is intentionally simulation-only and local-user scoped through the shared auth database.
+- The latest snapshot compatibility table remains the source for `GET /api/paper/portfolio`.
+- Run replay should continue to use the stored snapshot payload only; do not turn replay into a fresh simulation unless Chris explicitly asks for that behavior.

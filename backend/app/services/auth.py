@@ -67,6 +67,26 @@ class SharedAuthStore:
                     custom_strategy_json TEXT,
                     updated_at TEXT NOT NULL
                 );
+
+                CREATE TABLE IF NOT EXISTS model_trading_bot_paper_runs (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    user_id INTEGER NOT NULL,
+                    run_at TEXT NOT NULL,
+                    symbols_json TEXT NOT NULL,
+                    strategy_id TEXT NOT NULL,
+                    custom_strategy_json TEXT,
+                    requested_cash REAL NOT NULL,
+                    resulting_cash REAL NOT NULL,
+                    resulting_equity REAL NOT NULL,
+                    positions_json TEXT NOT NULL,
+                    orders_json TEXT NOT NULL,
+                    warnings_json TEXT NOT NULL DEFAULT '[]',
+                    error_flags_json TEXT NOT NULL DEFAULT '{}',
+                    snapshot_json TEXT NOT NULL
+                );
+
+                CREATE INDEX IF NOT EXISTS idx_model_trading_bot_paper_runs_user_at
+                ON model_trading_bot_paper_runs (user_id, run_at DESC, id DESC);
                 """
             )
 
@@ -206,11 +226,108 @@ class SharedAuthStore:
             "updated_at": row["updated_at"],
         }
 
+    def save_paper_run(
+        self,
+        user_id: int,
+        symbols: list[str],
+        snapshot: dict[str, Any],
+        requested_cash: float,
+        strategy_id: str,
+        custom_strategy: dict[str, Any] | None,
+    ) -> dict[str, Any]:
+        now = utcnow()
+        positions = snapshot.get("positions") if isinstance(snapshot.get("positions"), list) else []
+        orders = snapshot.get("orders") if isinstance(snapshot.get("orders"), list) else []
+        warnings = snapshot.get("warnings") if isinstance(snapshot.get("warnings"), list) else []
+        error_flags = snapshot.get("error_flags") if isinstance(snapshot.get("error_flags"), dict) else {}
+        resulting_cash = float(snapshot.get("cash", requested_cash))
+        resulting_equity = float(snapshot.get("equity", resulting_cash))
+        raw_custom = json.dumps(custom_strategy, sort_keys=True) if custom_strategy else None
+        with self._connect() as conn:
+            cursor = conn.execute(
+                """
+                INSERT INTO model_trading_bot_paper_runs
+                (
+                    user_id, run_at, symbols_json, strategy_id, custom_strategy_json,
+                    requested_cash, resulting_cash, resulting_equity, positions_json,
+                    orders_json, warnings_json, error_flags_json, snapshot_json
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    user_id,
+                    now,
+                    json.dumps(symbols),
+                    strategy_id,
+                    raw_custom,
+                    requested_cash,
+                    resulting_cash,
+                    resulting_equity,
+                    json.dumps(positions, sort_keys=True),
+                    json.dumps(orders, sort_keys=True),
+                    json.dumps(warnings, sort_keys=True),
+                    json.dumps(error_flags, sort_keys=True),
+                    json.dumps(snapshot, sort_keys=True),
+                ),
+            )
+            run_id = int(cursor.lastrowid)
+        return self.get_paper_run(user_id, run_id) or {
+            "id": run_id,
+            "user_id": user_id,
+            "run_at": now,
+            "symbols": symbols,
+            "strategy_id": strategy_id,
+            "requested_cash": requested_cash,
+            "cash": resulting_cash,
+            "equity": resulting_equity,
+            "position_count": len(positions),
+            "order_count": len(orders),
+            "custom_strategy": custom_strategy,
+            "positions": positions,
+            "orders": orders,
+            "warnings": warnings,
+            "error_flags": error_flags,
+            "snapshot": snapshot,
+        }
+
+    def list_paper_runs(self, user_id: int, limit: int = 20) -> list[dict[str, Any]]:
+        safe_limit = max(1, min(int(limit), 50))
+        with self._connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT * FROM model_trading_bot_paper_runs
+                WHERE user_id = ?
+                ORDER BY run_at DESC, id DESC
+                LIMIT ?
+                """,
+                (user_id, safe_limit),
+            ).fetchall()
+        return [self._paper_run_summary(row) for row in rows]
+
+    def get_paper_run(self, user_id: int, run_id: int) -> dict[str, Any] | None:
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT * FROM model_trading_bot_paper_runs WHERE user_id = ? AND id = ?",
+                (user_id, run_id),
+            ).fetchone()
+        if row is None:
+            return None
+        return {
+            **self._paper_run_summary(row),
+            "custom_strategy": json.loads(row["custom_strategy_json"]) if row["custom_strategy_json"] else None,
+            "positions": json.loads(row["positions_json"]),
+            "orders": json.loads(row["orders_json"]),
+            "warnings": json.loads(row["warnings_json"]),
+            "error_flags": json.loads(row["error_flags_json"]),
+            "snapshot": json.loads(row["snapshot_json"]),
+        }
+
     def reset_model_account(self, user_id: int) -> dict[str, Any]:
         with self._connect() as conn:
             conn.execute("DELETE FROM model_trading_bot_profiles WHERE user_id = ?", (user_id,))
             conn.execute("DELETE FROM model_trading_bot_strategies WHERE user_id = ?", (user_id,))
             conn.execute("DELETE FROM model_trading_bot_paper_portfolios WHERE user_id = ?", (user_id,))
+            conn.execute("DELETE FROM model_trading_bot_paper_runs WHERE user_id = ?", (user_id,))
         self.ensure_model_profile(user_id)
         return self.user_state(user_id)
 
@@ -247,4 +364,21 @@ class SharedAuthStore:
             "config": config,
             "created_at": row["created_at"],
             "updated_at": row["updated_at"],
+        }
+
+    @staticmethod
+    def _paper_run_summary(row: sqlite3.Row) -> dict[str, Any]:
+        return {
+            "id": row["id"],
+            "user_id": row["user_id"],
+            "run_at": row["run_at"],
+            "symbols": json.loads(row["symbols_json"]),
+            "strategy_id": row["strategy_id"],
+            "requested_cash": row["requested_cash"],
+            "cash": row["resulting_cash"],
+            "equity": row["resulting_equity"],
+            "position_count": len(json.loads(row["positions_json"])),
+            "order_count": len(json.loads(row["orders_json"])),
+            "warnings": json.loads(row["warnings_json"]),
+            "error_flags": json.loads(row["error_flags_json"]),
         }

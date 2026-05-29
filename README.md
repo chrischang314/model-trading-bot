@@ -111,6 +111,7 @@ The dashboard calls:
 - `POST /api/backtests` for the selected long/cash strategy.
 - `POST /api/backtests/compare` for a compact side-by-side comparison of multiple strategy IDs on one symbol.
 - `POST /api/paper/run` and `GET /api/paper/portfolio` for a user-scoped paper account snapshot using the selected strategy.
+- `GET /api/paper/runs` and `GET /api/paper/runs/{id}` for a signed-in user's newest-first paper run journal and full replay payloads.
 
 Default watched symbols are `AAPL,AMZN,META,NFLX,GOOGL`. The S&P 500 universe is cached separately and periodically refreshed with `SP500_REFRESH_HOURS` so ticker discovery does not require fetching price history for all 500+ listings on every page load.
 
@@ -128,6 +129,7 @@ The toy strategy layer is intentionally simple but now supports a strategy regis
 - Signals page trend explorer: interactive line chart for every stored signal with symbol switching, presets, raw versus normalized scale, position overlay, hover tooltips, legend, and brush zoom.
 - Backtesting page education: equity, benchmark, drawdown, and position toggles plus a trade anatomy panel that steps through simulated trade events.
 - Backtesting page comparison: a compact table can compare the built-in strategies, plus the active custom/saved strategy when selected, by return, Sharpe, drawdown, exposure, and trades.
+- Paper Run Journal: a Backtesting page panel records successful paper simulations, opens full run detail, and reloads older snapshots into the visible paper view without fetching market data or placing real orders.
 - Backtest uses next-day position application, a fee/slippage haircut, benchmark comparison, Sharpe, max drawdown, and trade list.
 
 Real trading systems commonly ingest algorithms as versioned source modules, reviewed configuration files, parameter sets for approved strategy templates, notebook research promoted into production code, or restricted DSL/rule expressions. This toy app uses the safer template/config route: built-ins are Python strategy functions, while the custom strategy UI sends a validated scorecard configuration instead of arbitrary executable code.

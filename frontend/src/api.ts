@@ -3,6 +3,8 @@ import type {
   BacktestResult,
   CustomStrategyConfig,
   OverviewRow,
+  PaperRunDetail,
+  PaperRunSummary,
   PaperSnapshot,
   SignalCatalogItem,
   SignalPoint,
@@ -143,6 +145,16 @@ export async function runPaper(symbols: string[], strategyId?: string, customStr
     method: "POST",
     body: JSON.stringify({ symbols, cash: 100000, strategy_id: strategyId, custom_strategy: customStrategy })
   });
+  return envelope.data;
+}
+
+export async function fetchPaperRuns(limit = 20): Promise<PaperRunSummary[]> {
+  const envelope = await request<{ data: PaperRunSummary[] }>(`/paper/runs?limit=${limit}`);
+  return envelope.data;
+}
+
+export async function fetchPaperRun(runId: number): Promise<PaperRunDetail> {
+  const envelope = await request<{ data: PaperRunDetail }>(`/paper/runs/${runId}`);
   return envelope.data;
 }
 
