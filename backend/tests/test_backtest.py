@@ -5,7 +5,7 @@ from fastapi.testclient import TestClient
 
 import app.main as main_module
 from app.services.backtest import run_long_cash_backtest
-from app.services.data_provider import MarketDataProviderError, NoMarketDataError
+from app.services.data_provider import FallbackProvider, MarketDataProviderError, NoMarketDataError
 from app.services.signals import calculate_signals
 
 
@@ -79,6 +79,20 @@ def provider_error(request) -> None:
     raise MarketDataProviderError("upstream timeout")
 
 
+class NoDataProvider:
+    source = "no-data"
+
+    def fetch_daily_bars(self, symbols, start=None, end=None, period="2y"):
+        raise NoMarketDataError("no rows")
+
+
+class FailingProvider:
+    source = "failing"
+
+    def fetch_daily_bars(self, symbols, start=None, end=None, period="2y"):
+        raise MarketDataProviderError("auth required")
+
+
 def test_backtest_compare_endpoint_returns_sorted_strategy_summaries(monkeypatch) -> None:
     monkeypatch.setattr(main_module, "storage", CompareFakeStorage())
     monkeypatch.setattr(main_module, "auth_store", CompareFakeAuthStore())
@@ -139,3 +153,28 @@ def test_explain_provider_error_returns_bad_gateway(monkeypatch) -> None:
 
     assert response.status_code == 502
     assert "Market data provider failed" in response.json()["detail"]
+
+
+def test_fallback_treats_mixed_no_data_and_fallback_failure_as_no_market_data() -> None:
+    provider = FallbackProvider()
+    provider.providers = [NoDataProvider(), FailingProvider()]
+
+    try:
+        provider.fetch_daily_bars(["NO_SUCH_SYMBOL_123"])
+    except NoMarketDataError as exc:
+        assert "no-data: no rows" in str(exc)
+        assert "failing: auth required" in str(exc)
+    else:
+        raise AssertionError("expected NoMarketDataError")
+
+
+def test_fallback_keeps_provider_only_failures_as_provider_errors() -> None:
+    provider = FallbackProvider()
+    provider.providers = [FailingProvider()]
+
+    try:
+        provider.fetch_daily_bars(["AAPL"])
+    except MarketDataProviderError as exc:
+        assert "failing: auth required" in str(exc)
+    else:
+        raise AssertionError("expected MarketDataProviderError")

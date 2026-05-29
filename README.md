@@ -114,7 +114,7 @@ The dashboard calls:
 
 Default watched symbols are `AAPL,AMZN,META,NFLX,GOOGL`. The S&P 500 universe is cached separately and periodically refreshed with `SP500_REFRESH_HOURS` so ticker discovery does not require fetching price history for all 500+ listings on every page load.
 
-When a symbol-specific read endpoint auto-ingests a ticker and the data provider returns no market data, the API now returns `404` with a clear "No market data available" message instead of an internal server error. This applies to explanation, timeseries, and backtest requests for unknown or delisted symbols. Market data provider outages return `502` so they are not mistaken for invalid tickers.
+When a symbol-specific read endpoint auto-ingests a ticker and the data provider returns no market data, the API now returns `404` with a clear "No market data available" message instead of an internal server error. This applies to explanation, timeseries, and backtest requests for unknown or delisted symbols. If every fallback only reports provider failures, the API returns `502`; if at least one provider confirms no rows for the requested symbol, the request stays on the no-market-data path so fallback parser/API-key noise does not turn an invalid ticker into a server error.
 
 ## Strategy
 

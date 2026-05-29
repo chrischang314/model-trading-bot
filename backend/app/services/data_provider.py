@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 from datetime import date
+from io import StringIO
 from typing import Protocol
 
 import pandas as pd
 import requests
+from pandas.errors import EmptyDataError, ParserError
 
 from app.utils import normalize_symbols
 
@@ -125,9 +127,12 @@ class StooqProvider:
         url = f"https://stooq.com/q/d/l/?s={stooq_symbol}&i=d"
         response = requests.get(url, timeout=20)
         response.raise_for_status()
-        from io import StringIO
-
-        frame = pd.read_csv(StringIO(response.text))
+        try:
+            frame = pd.read_csv(StringIO(response.text))
+        except (EmptyDataError, ParserError) as exc:
+            if "get your apikey" in response.text.lower():
+                raise MarketDataProviderError("Stooq CSV download requires an API key") from exc
+            raise NoMarketDataError("Stooq returned unparseable market data") from exc
         if frame.empty or "Date" not in frame.columns:
             return pd.DataFrame(columns=BAR_COLUMNS)
         frame = frame.rename(
@@ -177,7 +182,7 @@ class FallbackProvider:
             except Exception as exc:  # pragma: no cover - depends on external providers
                 errors.append(f"{provider.source}: {exc}")
         detail = "; ".join(errors)
-        if len(no_data_errors) == len(self.providers):
+        if no_data_errors:
             raise NoMarketDataError(detail)
         raise MarketDataProviderError(detail)
 

@@ -3,7 +3,7 @@
 ## Current Candidate
 
 - Branch/worktree: `projects-lan-repair-invalid-symbol` for the Projects LAN invalid-symbol repair.
-- Repair: symbol-specific explain, timeseries, and backtest reads return HTTP 404 with a clear "No market data available" detail when auto-ingest finds no provider rows; provider outages return HTTP 502.
+- Repair: symbol-specific explain, timeseries, and backtest reads return HTTP 404 with a clear "No market data available" detail when auto-ingest finds no provider rows; pure provider outages return HTTP 502.
 - Feature: Backtesting strategy comparison plus diagnostics freshness status.
 - Backend: `POST /api/backtests/compare` compares up to 8 strategy IDs on one symbol and returns compact sorted metric summaries.
 - Backend: `GET /api/diagnostics` reports `age_days` and `stale` for bar and signal frames.
@@ -29,3 +29,4 @@ $node = 'C:\Users\chris\AppData\Local\OpenAI\Codex\bin\node.exe'
 - Reproduced before the repair: `GET /api/explain/NO_SUCH_SYMBOL_123`, `GET /api/timeseries/NO_SUCH_SYMBOL_123`, and `POST /api/backtests` for `NO_SUCH_SYMBOL_123` returned HTTP 500 on the LAN deployment.
 - `POST /api/symbols` already returned a handled provider error and was left unchanged.
 - The repair intentionally does not convert storage or unexpected application exceptions into invalid-symbol responses.
+- Fallback provider behavior is intentionally asymmetric: a pure provider failure stays `502`, but a mixed "no rows" plus fallback parser/API-key failure is treated as `404` for symbol-specific reads because the primary signal is that the requested symbol has no market data.
