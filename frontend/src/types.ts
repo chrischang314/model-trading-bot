@@ -157,6 +157,36 @@ export type PaperSnapshot = {
   orders: Array<{ sym: string; side: string; notional: number; reason: string }>;
 };
 
+export type PaperPortfolio = {
+  snapshot: PaperSnapshot;
+  cash: number;
+  strategy_id: string;
+  custom_strategy: CustomStrategyConfig | null;
+  updated_at: string;
+};
+
+export type PaperRunSummary = {
+  id: number;
+  user_id: number;
+  created_at: string;
+  requested_symbols: string[];
+  cash: number;
+  strategy_id: string;
+  custom_strategy: CustomStrategyConfig | null;
+  resulting_cash: number;
+  resulting_equity: number;
+  order_count: number;
+  position_count: number;
+  warnings: string[];
+  error_flags: Record<string, unknown>;
+};
+
+export type PaperRunDetail = PaperRunSummary & {
+  snapshot: PaperSnapshot;
+  positions: PaperSnapshot["positions"];
+  orders: PaperSnapshot["orders"];
+};
+
 export type LocalUser = {
   id: number;
   username: string;
@@ -213,13 +243,7 @@ export type UserState = {
     created_at: string;
     updated_at: string;
   }>;
-  paper_portfolio: {
-    snapshot: PaperSnapshot;
-    cash: number;
-    strategy_id: string;
-    custom_strategy: CustomStrategyConfig | null;
-    updated_at: string;
-  } | null;
+  paper_portfolio: PaperPortfolio | null;
 };
 
 export type SignalCatalogItem = {

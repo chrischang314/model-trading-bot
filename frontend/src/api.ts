@@ -3,6 +3,9 @@ import type {
   BacktestResult,
   CustomStrategyConfig,
   OverviewRow,
+  PaperPortfolio,
+  PaperRunDetail,
+  PaperRunSummary,
   PaperSnapshot,
   SignalCatalogItem,
   SignalPoint,
@@ -97,6 +100,11 @@ export async function resetModelAccount(): Promise<UserState> {
   return envelope.data;
 }
 
+export async function fetchPaperPortfolio(): Promise<PaperPortfolio | null> {
+  const envelope = await request<{ data: PaperPortfolio | null }>("/paper/portfolio");
+  return envelope.data;
+}
+
 export async function fetchStrategy(strategyId?: string, customStrategy?: CustomStrategyConfig): Promise<StrategyInfo> {
   const envelope = await request<{ data: StrategyInfo }>(`/strategy${strategyQuery(strategyId, customStrategy)}`);
   return envelope.data;
@@ -143,6 +151,16 @@ export async function runPaper(symbols: string[], strategyId?: string, customStr
     method: "POST",
     body: JSON.stringify({ symbols, cash: 100000, strategy_id: strategyId, custom_strategy: customStrategy })
   });
+  return envelope.data;
+}
+
+export async function fetchPaperRuns(): Promise<PaperRunSummary[]> {
+  const envelope = await request<{ data: PaperRunSummary[] }>("/paper/runs");
+  return envelope.data;
+}
+
+export async function fetchPaperRun(runId: number): Promise<PaperRunDetail> {
+  const envelope = await request<{ data: PaperRunDetail }>(`/paper/runs/${runId}`);
   return envelope.data;
 }
 

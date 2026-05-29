@@ -815,6 +815,85 @@ h2 {
   align-self: start;
 }
 
+.paperJournalPanel {
+  align-self: start;
+}
+
+.paperRunSummary {
+  margin-bottom: 10px;
+}
+
+.paperRunTable {
+  max-height: 260px;
+}
+
+.selectedRunRow {
+  background: #f0fdfa;
+}
+
+.iconTextButton {
+  border: 1px solid #d6dae1;
+  border-radius: 8px;
+  min-height: 30px;
+  padding: 0 8px;
+  background: #ffffff;
+  color: #374151;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  font-size: 12px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.iconTextButton:hover {
+  border-color: #9ca3af;
+}
+
+.iconTextButton:disabled {
+  cursor: default;
+  color: #9ca3af;
+  background: #f9fafb;
+}
+
+.paperRunDetail {
+  display: grid;
+  gap: 10px;
+  margin-top: 12px;
+  border-top: 1px solid #e5e7eb;
+  padding-top: 12px;
+}
+
+.paperRunActions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.paperRunActions div {
+  min-width: 0;
+}
+
+.paperRunActions strong,
+.paperRunActions span {
+  display: block;
+  overflow-wrap: anywhere;
+}
+
+.paperRunActions span {
+  margin-top: 3px;
+  color: #6b7280;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.paperOrderTable {
+  max-height: 220px;
+}
+
 .comparisonSummary {
   display: grid;
   gap: 6px;
@@ -1341,6 +1420,15 @@ tbody tr:hover,
     min-height: 44px;
     width: 100%;
     justify-content: center;
+  }
+
+  .paperRunActions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .paperRunActions .commandButton {
+    width: 100%;
   }
 
   .metricsGrid {

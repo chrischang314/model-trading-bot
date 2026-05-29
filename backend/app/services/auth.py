@@ -67,6 +67,26 @@ class SharedAuthStore:
                     custom_strategy_json TEXT,
                     updated_at TEXT NOT NULL
                 );
+
+                CREATE TABLE IF NOT EXISTS model_trading_bot_paper_runs (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    user_id INTEGER NOT NULL,
+                    requested_symbols_json TEXT NOT NULL,
+                    snapshot_json TEXT NOT NULL,
+                    cash REAL NOT NULL,
+                    strategy_id TEXT NOT NULL,
+                    custom_strategy_json TEXT,
+                    resulting_cash REAL NOT NULL,
+                    resulting_equity REAL NOT NULL,
+                    positions_json TEXT NOT NULL,
+                    orders_json TEXT NOT NULL,
+                    warnings_json TEXT NOT NULL DEFAULT '[]',
+                    error_flags_json TEXT NOT NULL DEFAULT '{}',
+                    created_at TEXT NOT NULL
+                );
+
+                CREATE INDEX IF NOT EXISTS idx_model_trading_bot_paper_runs_user_created
+                    ON model_trading_bot_paper_runs(user_id, created_at DESC, id DESC);
                 """
             )
 
@@ -190,6 +210,86 @@ class SharedAuthStore:
             )
         return self.get_paper_portfolio(user_id) or {"snapshot": snapshot, "updated_at": now}
 
+    def save_paper_run(
+        self,
+        user_id: int,
+        requested_symbols: list[str],
+        snapshot: dict[str, Any],
+        cash: float,
+        strategy_id: str,
+        custom_strategy: dict[str, Any] | None,
+    ) -> dict[str, Any]:
+        now = utcnow()
+        positions = snapshot.get("positions") if isinstance(snapshot.get("positions"), list) else []
+        orders = snapshot.get("orders") if isinstance(snapshot.get("orders"), list) else []
+        warnings = snapshot.get("warnings") if isinstance(snapshot.get("warnings"), list) else []
+        error_flags = snapshot.get("error_flags") if isinstance(snapshot.get("error_flags"), dict) else {}
+        raw_custom = json.dumps(custom_strategy, sort_keys=True) if custom_strategy else None
+        with self._connect() as conn:
+            cursor = conn.execute(
+                """
+                INSERT INTO model_trading_bot_paper_runs
+                (
+                    user_id,
+                    requested_symbols_json,
+                    snapshot_json,
+                    cash,
+                    strategy_id,
+                    custom_strategy_json,
+                    resulting_cash,
+                    resulting_equity,
+                    positions_json,
+                    orders_json,
+                    warnings_json,
+                    error_flags_json,
+                    created_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    user_id,
+                    json.dumps(requested_symbols, sort_keys=True),
+                    json.dumps(snapshot, sort_keys=True),
+                    cash,
+                    strategy_id,
+                    raw_custom,
+                    float(snapshot.get("cash", cash)),
+                    float(snapshot.get("equity", cash)),
+                    json.dumps(positions, sort_keys=True),
+                    json.dumps(orders, sort_keys=True),
+                    json.dumps(warnings, sort_keys=True),
+                    json.dumps(error_flags, sort_keys=True),
+                    now,
+                ),
+            )
+            row = conn.execute(
+                "SELECT * FROM model_trading_bot_paper_runs WHERE id = ? AND user_id = ?",
+                (cursor.lastrowid, user_id),
+            ).fetchone()
+        assert row is not None
+        return self._paper_run(row, include_detail=True)
+
+    def list_paper_runs(self, user_id: int, limit: int = 25) -> list[dict[str, Any]]:
+        with self._connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT * FROM model_trading_bot_paper_runs
+                WHERE user_id = ?
+                ORDER BY created_at DESC, id DESC
+                LIMIT ?
+                """,
+                (user_id, limit),
+            ).fetchall()
+        return [self._paper_run(row, include_detail=False) for row in rows]
+
+    def get_paper_run(self, user_id: int, run_id: int) -> dict[str, Any] | None:
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT * FROM model_trading_bot_paper_runs WHERE user_id = ? AND id = ?",
+                (user_id, run_id),
+            ).fetchone()
+        return self._paper_run(row, include_detail=True) if row else None
+
     def get_paper_portfolio(self, user_id: int) -> dict[str, Any] | None:
         with self._connect() as conn:
             row = conn.execute(
@@ -211,6 +311,7 @@ class SharedAuthStore:
             conn.execute("DELETE FROM model_trading_bot_profiles WHERE user_id = ?", (user_id,))
             conn.execute("DELETE FROM model_trading_bot_strategies WHERE user_id = ?", (user_id,))
             conn.execute("DELETE FROM model_trading_bot_paper_portfolios WHERE user_id = ?", (user_id,))
+            conn.execute("DELETE FROM model_trading_bot_paper_runs WHERE user_id = ?", (user_id,))
         self.ensure_model_profile(user_id)
         return self.user_state(user_id)
 
@@ -248,3 +349,28 @@ class SharedAuthStore:
             "created_at": row["created_at"],
             "updated_at": row["updated_at"],
         }
+
+    @staticmethod
+    def _paper_run(row: sqlite3.Row, include_detail: bool) -> dict[str, Any]:
+        positions = json.loads(row["positions_json"])
+        orders = json.loads(row["orders_json"])
+        payload = {
+            "id": row["id"],
+            "user_id": row["user_id"],
+            "created_at": row["created_at"],
+            "requested_symbols": json.loads(row["requested_symbols_json"]),
+            "cash": row["cash"],
+            "strategy_id": row["strategy_id"],
+            "custom_strategy": json.loads(row["custom_strategy_json"]) if row["custom_strategy_json"] else None,
+            "resulting_cash": row["resulting_cash"],
+            "resulting_equity": row["resulting_equity"],
+            "order_count": len(orders),
+            "position_count": len(positions),
+            "warnings": json.loads(row["warnings_json"]),
+            "error_flags": json.loads(row["error_flags_json"]),
+        }
+        if include_detail:
+            payload["snapshot"] = json.loads(row["snapshot_json"])
+            payload["positions"] = positions
+            payload["orders"] = orders
+        return payload

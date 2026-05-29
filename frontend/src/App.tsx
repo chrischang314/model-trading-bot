@@ -7,6 +7,7 @@ import {
   ChevronRight,
   Database,
   Gauge,
+  History,
   LogOut,
   Layers,
   LineChart as LineIcon,
@@ -37,6 +38,9 @@ import {
   addSymbols,
   compareBacktests,
   fetchDiagnostics,
+  fetchPaperPortfolio,
+  fetchPaperRun,
+  fetchPaperRuns,
   fetchUserState,
   fetchLatestSignals,
   fetchOverview,
@@ -61,6 +65,8 @@ import type {
   DiagnosticsFrame,
   OverviewRow,
   PaperSnapshot,
+  PaperRunDetail,
+  PaperRunSummary,
   SignalCatalogItem,
   SignalPoint,
   SignalValue,
@@ -235,6 +241,8 @@ export function App() {
   const [backtest, setBacktest] = useState<BacktestResult | null>(null);
   const [strategyComparison, setStrategyComparison] = useState<BacktestComparison[]>([]);
   const [paper, setPaper] = useState<PaperSnapshot | null>(null);
+  const [paperRuns, setPaperRuns] = useState<PaperRunSummary[]>([]);
+  const [selectedPaperRun, setSelectedPaperRun] = useState<PaperRunDetail | null>(null);
   const [strategy, setStrategy] = useState<StrategyInfo | null>(null);
   const [strategies, setStrategies] = useState<StrategyInfo[]>([]);
   const [diagnostics, setDiagnostics] = useState<SystemDiagnostics | null>(null);
@@ -254,6 +262,9 @@ export function App() {
   const [syncingUniverse, setSyncingUniverse] = useState(false);
   const [backtestRunning, setBacktestRunning] = useState(false);
   const [comparisonLoading, setComparisonLoading] = useState(false);
+  const [paperRunning, setPaperRunning] = useState(false);
+  const [paperRunsLoading, setPaperRunsLoading] = useState(false);
+  const [paperRunDetailLoading, setPaperRunDetailLoading] = useState(false);
   const [savingStrategy, setSavingStrategy] = useState(false);
   const [resettingAccount, setResettingAccount] = useState(false);
   const [status, setStatus] = useState<string | null>(null);
@@ -276,14 +287,16 @@ export function App() {
     setAppLoading(true);
     setError(null);
     try {
-      const [rows, signalRows, strategyInfo, strategyRows, catalogRows, universeRows, diagnosticsRows] = await Promise.all([
+      const [rows, signalRows, strategyInfo, strategyRows, catalogRows, universeRows, diagnosticsRows, portfolioState, runRows] = await Promise.all([
         fetchOverview(selectedStrategyId, selectedCustomStrategy),
         fetchLatestSignals(selectedStrategyId, selectedCustomStrategy),
         fetchStrategy(selectedStrategyId, selectedCustomStrategy),
         fetchStrategies(),
         fetchSignalCatalog(),
         fetchSp500Universe(false).catch(() => null),
-        fetchDiagnostics().catch(() => null)
+        fetchDiagnostics().catch(() => null),
+        fetchPaperPortfolio().catch(() => null),
+        fetchPaperRuns().catch(() => [])
       ]);
       setOverview(rows);
       setLatestSignals(signalRows);
@@ -296,9 +309,14 @@ export function App() {
       if (diagnosticsRows) {
         setDiagnostics(diagnosticsRows);
       }
+      setPaper(portfolioState?.snapshot ?? null);
+      setPaperRuns(runRows);
+      if (selectedPaperRun && !runRows.some((run) => run.id === selectedPaperRun.id)) {
+        setSelectedPaperRun(null);
+      }
       const active = rows.some((row) => row.sym === symbol) ? symbol : rows[0]?.sym ?? DEFAULT_SYMBOLS[0];
       setSelectedSymbol(active);
-      await loadSymbol(active, rows, true, selectedStrategyId, selectedCustomStrategy);
+      await loadSymbol(active, rows, false, selectedStrategyId, selectedCustomStrategy);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Initial load failed");
     } finally {
@@ -352,7 +370,7 @@ export function App() {
     if (diagnosticsRows) {
       setDiagnostics(diagnosticsRows);
     }
-    await loadSymbol(nextSymbol, rows, true, strategyId, custom);
+    await loadSymbol(nextSymbol, rows, false, strategyId, custom);
   }
 
   async function refreshData() {
@@ -444,6 +462,60 @@ export function App() {
     }
   }
 
+  async function refreshPaperRunList(): Promise<PaperRunSummary[]> {
+    setPaperRunsLoading(true);
+    try {
+      const rows = await fetchPaperRuns();
+      setPaperRuns(rows);
+      if (selectedPaperRun && !rows.some((run) => run.id === selectedPaperRun.id)) {
+        setSelectedPaperRun(null);
+      }
+      return rows;
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Paper run history failed");
+      return [];
+    } finally {
+      setPaperRunsLoading(false);
+    }
+  }
+
+  async function openPaperRun(runId: number) {
+    setPaperRunDetailLoading(true);
+    setError(null);
+    try {
+      setSelectedPaperRun(await fetchPaperRun(runId));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Paper run detail failed");
+    } finally {
+      setPaperRunDetailLoading(false);
+    }
+  }
+
+  function replayPaperRun(run: PaperRunDetail) {
+    setPaper(run.snapshot);
+    setStatus(`Loaded paper run from ${shortDate(run.created_at)} ${shortTime(run.created_at)}.`);
+  }
+
+  async function runCurrentPaper() {
+    const activeSymbols = overview.length ? overview.map((row) => row.sym) : DEFAULT_SYMBOLS;
+    setPaperRunning(true);
+    setStatus(`Running paper allocation for ${activeSymbols.length} symbols...`);
+    setError(null);
+    try {
+      const snapshot = await runPaper(activeSymbols, selectedStrategyId, selectedCustomStrategy);
+      setPaper(snapshot);
+      const rows = await refreshPaperRunList();
+      if (rows[0]) {
+        await openPaperRun(rows[0].id);
+      }
+      setStatus(`Paper run saved with ${snapshot.orders.length} intended orders.`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Paper run failed");
+    } finally {
+      setPaperRunning(false);
+    }
+  }
+
   async function changeStrategy(strategyId: string, nextCustom = customStrategy) {
     const selected = strategies.find((item) => item.id === strategyId);
     const effectiveCustom = selected?.custom ?? nextCustom;
@@ -519,7 +591,7 @@ export function App() {
   }
 
   async function resetAccount() {
-    const confirmed = window.confirm("Reset this model-trading-bot account to defaults? Saved scorecards and the paper portfolio snapshot will be cleared.");
+    const confirmed = window.confirm("Reset this model-trading-bot account to defaults? Saved scorecards, the paper portfolio snapshot, and the paper run journal will be cleared.");
     if (!confirmed) {
       return;
     }
@@ -531,6 +603,8 @@ export function App() {
       setCustomStrategy(DEFAULT_CUSTOM_STRATEGY);
       setSelectedStrategyId(DEFAULT_STRATEGY_ID);
       setPaper(null);
+      setPaperRuns([]);
+      setSelectedPaperRun(null);
       await loadApp(DEFAULT_SYMBOLS[0]);
       setStatus(`${state.user.username}'s model-trading-bot account was reset to defaults.`);
     } catch (err) {
@@ -703,6 +777,9 @@ export function App() {
           strategy={strategy}
           strategies={strategies}
           strategyComparison={strategyComparison}
+          paper={paper}
+          paperRuns={paperRuns}
+          selectedPaperRun={selectedPaperRun}
           customStrategy={customStrategy}
           setCustomStrategy={setCustomStrategy}
           applyCustomStrategy={applyCustomStrategy}
@@ -712,8 +789,14 @@ export function App() {
           savingStrategy={savingStrategy}
           resettingAccount={resettingAccount}
           comparisonLoading={comparisonLoading}
+          paperRunning={paperRunning}
+          paperRunsLoading={paperRunsLoading}
+          paperRunDetailLoading={paperRunDetailLoading}
           runSelectedBacktest={runSelectedBacktest}
           runStrategyComparison={runStrategyComparison}
+          runCurrentPaper={runCurrentPaper}
+          openPaperRun={openPaperRun}
+          replayPaperRun={replayPaperRun}
         />
       ) : null}
     </main>
@@ -1327,6 +1410,9 @@ function BacktestingPage({
   strategy,
   strategies,
   strategyComparison,
+  paper,
+  paperRuns,
+  selectedPaperRun,
   customStrategy,
   setCustomStrategy,
   applyCustomStrategy,
@@ -1336,8 +1422,14 @@ function BacktestingPage({
   savingStrategy,
   resettingAccount,
   comparisonLoading,
+  paperRunning,
+  paperRunsLoading,
+  paperRunDetailLoading,
   runSelectedBacktest,
-  runStrategyComparison
+  runStrategyComparison,
+  runCurrentPaper,
+  openPaperRun,
+  replayPaperRun
 }: {
   selectedSymbol: string;
   backtest: BacktestResult | null;
@@ -1345,6 +1437,9 @@ function BacktestingPage({
   strategy: StrategyInfo | null;
   strategies: StrategyInfo[];
   strategyComparison: BacktestComparison[];
+  paper: PaperSnapshot | null;
+  paperRuns: PaperRunSummary[];
+  selectedPaperRun: PaperRunDetail | null;
   customStrategy: CustomStrategyConfig;
   setCustomStrategy: (value: CustomStrategyConfig) => void;
   applyCustomStrategy: () => void;
@@ -1354,8 +1449,14 @@ function BacktestingPage({
   savingStrategy: boolean;
   resettingAccount: boolean;
   comparisonLoading: boolean;
+  paperRunning: boolean;
+  paperRunsLoading: boolean;
+  paperRunDetailLoading: boolean;
   runSelectedBacktest: () => void;
   runStrategyComparison: () => void;
+  runCurrentPaper: () => void;
+  openPaperRun: (runId: number) => void;
+  replayPaperRun: (run: PaperRunDetail) => void;
 }) {
   return (
     <section className="backtestLayout">
@@ -1384,6 +1485,18 @@ function BacktestingPage({
         comparison={strategyComparison}
         comparisonLoading={comparisonLoading}
         runStrategyComparison={runStrategyComparison}
+      />
+
+      <PaperRunJournalPanel
+        paper={paper}
+        runs={paperRuns}
+        selectedRun={selectedPaperRun}
+        loading={paperRunsLoading}
+        detailLoading={paperRunDetailLoading}
+        paperRunning={paperRunning}
+        runCurrentPaper={runCurrentPaper}
+        openPaperRun={openPaperRun}
+        replayPaperRun={replayPaperRun}
       />
 
       <div className="panel">
@@ -1578,6 +1691,139 @@ function StrategyComparisonPanel({
           </tbody>
         </table>
       </div>
+    </div>
+  );
+}
+
+function PaperRunJournalPanel({
+  paper,
+  runs,
+  selectedRun,
+  loading,
+  detailLoading,
+  paperRunning,
+  runCurrentPaper,
+  openPaperRun,
+  replayPaperRun
+}: {
+  paper: PaperSnapshot | null;
+  runs: PaperRunSummary[];
+  selectedRun: PaperRunDetail | null;
+  loading: boolean;
+  detailLoading: boolean;
+  paperRunning: boolean;
+  runCurrentPaper: () => void;
+  openPaperRun: (runId: number) => void;
+  replayPaperRun: (run: PaperRunDetail) => void;
+}) {
+  return (
+    <div className="panel paperJournalPanel" data-testid="paper-run-journal">
+      <div className="panelHeader">
+        <div>
+          <h2>Paper Run Journal</h2>
+          <span>{loading ? "Loading" : `${runs.length} saved`}</span>
+        </div>
+        <button className="commandButton compact" type="button" onClick={runCurrentPaper} disabled={paperRunning}>
+          {paperRunning ? <RefreshCw size={17} className="spin" /> : <Play size={17} />}
+          Run Paper
+        </button>
+      </div>
+
+      <div className="metricStrip slim paperRunSummary">
+        <SmallMetric label="Paper Equity" value={paper ? money.format(paper.equity) : "-"} />
+        <SmallMetric label="Cash" value={paper ? money.format(paper.cash) : "-"} />
+        <SmallMetric label="Positions" value={paper ? String(paper.positions.length) : "-"} />
+        <SmallMetric label="Orders" value={paper ? String(paper.orders.length) : "-"} />
+      </div>
+
+      <div className="tableWrap paperRunTable">
+        <table>
+          <thead>
+            <tr>
+              <th>Run</th>
+              <th>Strategy</th>
+              <th>Symbols</th>
+              <th>Equity</th>
+              <th>Orders</th>
+              <th>Open</th>
+            </tr>
+          </thead>
+          <tbody>
+            {runs.slice(0, 12).map((run) => (
+              <tr key={run.id} className={selectedRun?.id === run.id ? "selectedRunRow" : ""}>
+                <td>{`${shortDate(run.created_at)} ${shortTime(run.created_at)}`}</td>
+                <td>{formatStrategyName(run.strategy_id)}</td>
+                <td>{run.requested_symbols.join(", ")}</td>
+                <td>{money.format(run.resulting_equity)}</td>
+                <td>{run.order_count}</td>
+                <td>
+                  <button className="iconTextButton" type="button" onClick={() => openPaperRun(run.id)} disabled={detailLoading}>
+                    <ChevronRight size={15} />
+                    Open
+                  </button>
+                </td>
+              </tr>
+            ))}
+            {!runs.length ? (
+              <tr>
+                <td colSpan={6}>{loading ? "Loading paper runs..." : "No saved paper runs yet."}</td>
+              </tr>
+            ) : null}
+          </tbody>
+        </table>
+      </div>
+
+      {detailLoading ? (
+        <div className="emptyState paperRunDetail">
+          <strong>Loading run detail</strong>
+        </div>
+      ) : selectedRun ? (
+        <div className="paperRunDetail">
+          <div className="paperRunActions">
+            <div>
+              <strong>{formatStrategyName(selectedRun.strategy_id)}</strong>
+              <span>{selectedRun.requested_symbols.join(", ")}</span>
+            </div>
+            <button className="commandButton compact" type="button" onClick={() => replayPaperRun(selectedRun)}>
+              <History size={17} />
+              Load Run
+            </button>
+          </div>
+          <div className="metricStrip slim">
+            <SmallMetric label="Requested" value={money.format(selectedRun.cash)} />
+            <SmallMetric label="Equity" value={money.format(selectedRun.resulting_equity)} />
+            <SmallMetric label="Cash" value={money.format(selectedRun.resulting_cash)} />
+            <SmallMetric label="Positions" value={String(selectedRun.position_count)} />
+          </div>
+          <div className="tableWrap paperOrderTable">
+            <table>
+              <thead>
+                <tr>
+                  <th>Symbol</th>
+                  <th>Side</th>
+                  <th>Notional</th>
+                  <th>Reason</th>
+                </tr>
+              </thead>
+              <tbody>
+                {selectedRun.orders.map((order, index) => (
+                  <tr key={`${selectedRun.id}-${order.sym}-${order.side}-${index}`}>
+                    <td>{order.sym}</td>
+                    <td>{order.side}</td>
+                    <td>{money.format(order.notional)}</td>
+                    <td>{order.reason}</td>
+                  </tr>
+                ))}
+                {!selectedRun.orders.length ? (
+                  <tr>
+                    <td colSpan={4}>No orders in this run.</td>
+                  </tr>
+                ) : null}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -2249,6 +2495,17 @@ function labelPage(page: Page) {
 
 function titleCase(value: string) {
   return value.charAt(0).toUpperCase() + value.slice(1);
+}
+
+function formatStrategyName(value: string) {
+  if (value.startsWith("user_strategy_")) {
+    return `Saved ${value.replace("user_strategy_", "")}`;
+  }
+  return value
+    .split("_")
+    .filter(Boolean)
+    .map(titleCase)
+    .join(" ");
 }
 
 function fmt(value: SignalValue | undefined) {
