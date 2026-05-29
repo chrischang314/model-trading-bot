@@ -12,6 +12,7 @@ Model Trading Bot is an educational market-data stack. It does not place real tr
 - Backtests replay those positions with simple costs and compare them with buy-and-hold.
 - Strategy comparisons run several long/cash rules on the same symbol and assumptions so return, drawdown, Sharpe, exposure, and trade count can be compared without changing pages.
 - Paper snapshots turn the latest strategy result into a simulated portfolio without sending orders.
+- Paper run journal records preserve successful paper snapshots over time. Each run is scoped to the signed-in local user and can be loaded back into the visible paper view for review without re-simulating or sending orders.
 
 ## Operational Checks
 
@@ -28,6 +29,8 @@ Bars and signals are marked stale after more than three calendar days without a 
 The diagnostics endpoint must not trigger an S&P 500 internet refresh. Manual refresh still belongs to `POST /api/universe/sp500/refresh` or the S&P 500 button in the dashboard.
 
 Symbol-specific read endpoints may auto-ingest when local signals are missing. If the provider cannot return data for a ticker, explain, timeseries, and backtest requests should return HTTP 404 with a clear no-market-data message. Pure provider outages should return HTTP 502, and storage or unexpected application failures should not be hidden as invalid-symbol responses. A mixed fallback result where one provider reports no rows and another provider fails to parse or authenticate should stay on the no-market-data path for symbol-specific reads.
+
+Paper run history lives in the shared local auth SQLite database, next to saved scorecards and the latest paper portfolio snapshot. `POST /api/paper/run` appends a new history row and updates the compatibility latest snapshot. `POST /api/user/account/reset` clears saved scorecards, the latest paper snapshot, and the user's paper run history.
 
 ## Safety Boundaries
 

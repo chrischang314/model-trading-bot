@@ -836,6 +836,107 @@ h2 {
   max-height: 300px;
 }
 
+.paperJournalPanel {
+  align-self: start;
+}
+
+.paperJournalSummary {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.paperJournalGrid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 12px;
+}
+
+.paperRunTable {
+  max-height: 260px;
+}
+
+.paperRunDetail {
+  min-width: 0;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  padding: 10px;
+  background: #f9fafb;
+}
+
+.paperRunDetailHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.paperRunDetailHeader strong,
+.paperRunDetailHeader span {
+  display: block;
+}
+
+.paperRunDetailHeader span {
+  color: #6b7280;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.paperRunOrders {
+  display: grid;
+  gap: 7px;
+  margin-top: 10px;
+  max-height: 190px;
+  overflow: auto;
+}
+
+.paperRunOrders div {
+  display: grid;
+  grid-template-columns: 52px 82px minmax(86px, 0.6fr) minmax(0, 1fr);
+  gap: 8px;
+  align-items: center;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  background: #ffffff;
+  padding: 8px;
+  font-size: 12px;
+}
+
+.paperRunOrders strong,
+.paperRunOrders span,
+.paperRunOrders small {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.paperRunOrders small {
+  color: #6b7280;
+}
+
+.iconTableButton {
+  width: 32px;
+  min-height: 32px;
+  border: 1px solid #d6dae1;
+  border-radius: 8px;
+  background: #ffffff;
+  color: #374151;
+  display: inline-grid;
+  place-items: center;
+  cursor: pointer;
+}
+
+.iconTableButton:disabled {
+  cursor: wait;
+  color: #9ca3af;
+}
+
+.mutedText {
+  color: #6b7280;
+  font-size: 13px;
+}
+
 .anatomyPanel {
   align-self: start;
 }
@@ -1399,6 +1500,19 @@ tbody tr:hover,
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
+  .paperJournalSummary {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .paperRunDetailHeader {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .paperRunOrders div {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
   .lessonBody,
   .chartPrinciples {
     grid-template-columns: 1fr;
@@ -1465,7 +1579,8 @@ tbody tr:hover,
   }
 
   .metricStrip,
-  .metricStrip.slim {
+  .metricStrip.slim,
+  .paperJournalSummary {
     grid-template-columns: 1fr;
   }
 

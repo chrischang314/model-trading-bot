@@ -114,13 +114,13 @@ class StooqProvider:
         end: date | None = None,
         period: str = "2y",
     ) -> pd.DataFrame:
-        frames = [self._fetch_symbol(symbol, start, end) for symbol in normalize_symbols(symbols)]
+        frames = [self._fetch_symbol(symbol, start, end, period) for symbol in normalize_symbols(symbols)]
         bars = pd.concat([frame for frame in frames if not frame.empty], ignore_index=True)
         if bars.empty:
             raise NoMarketDataError("Stooq returned no rows")
         return bars[BAR_COLUMNS].sort_values(["sym", "date"]).reset_index(drop=True)
 
-    def _fetch_symbol(self, symbol: str, start: date | None, end: date | None) -> pd.DataFrame:
+    def _fetch_symbol(self, symbol: str, start: date | None, end: date | None, period: str) -> pd.DataFrame:
         stooq_symbol = symbol.lower()
         if "." not in stooq_symbol:
             stooq_symbol = f"{stooq_symbol}.us"

@@ -157,6 +157,26 @@ export type PaperSnapshot = {
   orders: Array<{ sym: string; side: string; notional: number; reason: string }>;
 };
 
+export type PaperRunSummary = {
+  id: number;
+  user_id: number;
+  created_at: string;
+  symbols: string[];
+  strategy_id: string;
+  custom_strategy: CustomStrategyConfig | null;
+  requested_cash: number;
+  result_cash: number | null;
+  equity: number | null;
+  position_count: number;
+  order_count: number;
+  warnings: string[];
+  error_flags: string[];
+};
+
+export type PaperRunDetail = PaperRunSummary & {
+  snapshot: PaperSnapshot;
+};
+
 export type LocalUser = {
   id: number;
   username: string;

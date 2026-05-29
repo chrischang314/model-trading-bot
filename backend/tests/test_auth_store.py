@@ -26,19 +26,31 @@ def test_shared_auth_store_reuses_user_and_resets_model_account(tmp_path) -> Non
             "min_momentum_score": None,
         },
     )
-    store.save_paper_portfolio(
+    first_run = store.save_paper_run(
         first["id"],
         {"cash": 1, "equity": 1, "positions": [], "orders": []},
+        ["AAPL"],
         1,
         "custom_scorecard",
         saved["config"],
     )
+    store.save_paper_run(
+        first["id"],
+        {"cash": 2, "equity": 3, "positions": [{"sym": "META"}], "orders": [{"sym": "META"}]},
+        ["META"],
+        2,
+        "multi_factor_scorecard",
+        None,
+    )
 
     assert store.list_user_strategies(first["id"])[0]["name"] == "RSI guard"
-    assert store.get_paper_portfolio(first["id"]) is not None
+    assert store.get_paper_portfolio(first["id"])["snapshot"]["equity"] == 3
+    assert [run["symbols"] for run in store.list_paper_runs(first["id"])] == [["META"], ["AAPL"]]
+    assert store.get_paper_run(first["id"], first_run["id"])["snapshot"]["equity"] == 1
 
     reset = store.reset_model_account(first["id"])
 
     assert reset["strategies"] == []
     assert reset["paper_portfolio"] is None
+    assert store.list_paper_runs(first["id"]) == []
     assert reset["profile"]["paper_cash"] == 100000

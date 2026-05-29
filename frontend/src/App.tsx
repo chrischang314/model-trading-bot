@@ -6,7 +6,9 @@ import {
   ChevronDown,
   ChevronRight,
   Database,
+  Eye,
   Gauge,
+  History,
   LogOut,
   Layers,
   LineChart as LineIcon,
@@ -37,6 +39,8 @@ import {
   addSymbols,
   compareBacktests,
   fetchDiagnostics,
+  fetchPaperRun,
+  fetchPaperRuns,
   fetchUserState,
   fetchLatestSignals,
   fetchOverview,
@@ -60,6 +64,8 @@ import type {
   CustomStrategyConfig,
   DiagnosticsFrame,
   OverviewRow,
+  PaperRunDetail,
+  PaperRunSummary,
   PaperSnapshot,
   SignalCatalogItem,
   SignalPoint,
@@ -235,6 +241,8 @@ export function App() {
   const [backtest, setBacktest] = useState<BacktestResult | null>(null);
   const [strategyComparison, setStrategyComparison] = useState<BacktestComparison[]>([]);
   const [paper, setPaper] = useState<PaperSnapshot | null>(null);
+  const [paperRuns, setPaperRuns] = useState<PaperRunSummary[]>([]);
+  const [selectedPaperRun, setSelectedPaperRun] = useState<PaperRunDetail | null>(null);
   const [strategy, setStrategy] = useState<StrategyInfo | null>(null);
   const [strategies, setStrategies] = useState<StrategyInfo[]>([]);
   const [diagnostics, setDiagnostics] = useState<SystemDiagnostics | null>(null);
@@ -254,6 +262,7 @@ export function App() {
   const [syncingUniverse, setSyncingUniverse] = useState(false);
   const [backtestRunning, setBacktestRunning] = useState(false);
   const [comparisonLoading, setComparisonLoading] = useState(false);
+  const [paperRunsLoading, setPaperRunsLoading] = useState(false);
   const [savingStrategy, setSavingStrategy] = useState(false);
   const [resettingAccount, setResettingAccount] = useState(false);
   const [status, setStatus] = useState<string | null>(null);
@@ -272,18 +281,19 @@ export function App() {
     return latestSignals.filter((row) => row.sym.includes(needle) || String(row.signal_reason ?? "").toUpperCase().includes(needle));
   }, [latestSignals, signalFilter]);
 
-  async function loadApp(symbol = selectedSymbol) {
+  async function loadApp(symbol = selectedSymbol, includePaperSnapshot = true) {
     setAppLoading(true);
     setError(null);
     try {
-      const [rows, signalRows, strategyInfo, strategyRows, catalogRows, universeRows, diagnosticsRows] = await Promise.all([
+      const [rows, signalRows, strategyInfo, strategyRows, catalogRows, universeRows, diagnosticsRows, paperRunRows] = await Promise.all([
         fetchOverview(selectedStrategyId, selectedCustomStrategy),
         fetchLatestSignals(selectedStrategyId, selectedCustomStrategy),
         fetchStrategy(selectedStrategyId, selectedCustomStrategy),
         fetchStrategies(),
         fetchSignalCatalog(),
         fetchSp500Universe(false).catch(() => null),
-        fetchDiagnostics().catch(() => null)
+        fetchDiagnostics().catch(() => null),
+        fetchPaperRuns().catch(() => [])
       ]);
       setOverview(rows);
       setLatestSignals(signalRows);
@@ -296,9 +306,10 @@ export function App() {
       if (diagnosticsRows) {
         setDiagnostics(diagnosticsRows);
       }
+      setPaperRuns(paperRunRows);
       const active = rows.some((row) => row.sym === symbol) ? symbol : rows[0]?.sym ?? DEFAULT_SYMBOLS[0];
       setSelectedSymbol(active);
-      await loadSymbol(active, rows, true, selectedStrategyId, selectedCustomStrategy);
+      await loadSymbol(active, rows, includePaperSnapshot, selectedStrategyId, selectedCustomStrategy);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Initial load failed");
     } finally {
@@ -327,6 +338,7 @@ export function App() {
       setBacktest(backtestResult as BacktestResult);
       if (paperSnapshot) {
         setPaper(paperSnapshot as PaperSnapshot);
+        setPaperRuns(await fetchPaperRuns().catch(() => []));
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Symbol load failed");
@@ -484,6 +496,7 @@ export function App() {
       if (state.paper_portfolio?.snapshot) {
         setPaper(state.paper_portfolio.snapshot);
       }
+      setPaperRuns(await fetchPaperRuns().catch(() => []));
       await loadApp(selectedSymbol);
       setStatus(`Signed in as ${state.user.username}.`);
     } catch (err) {
@@ -519,7 +532,7 @@ export function App() {
   }
 
   async function resetAccount() {
-    const confirmed = window.confirm("Reset this model-trading-bot account to defaults? Saved scorecards and the paper portfolio snapshot will be cleared.");
+    const confirmed = window.confirm("Reset this model-trading-bot account to defaults? Saved scorecards, paper portfolio snapshot, and paper run history will be cleared.");
     if (!confirmed) {
       return;
     }
@@ -531,13 +544,33 @@ export function App() {
       setCustomStrategy(DEFAULT_CUSTOM_STRATEGY);
       setSelectedStrategyId(DEFAULT_STRATEGY_ID);
       setPaper(null);
-      await loadApp(DEFAULT_SYMBOLS[0]);
+      setPaperRuns([]);
+      setSelectedPaperRun(null);
+      await loadApp(DEFAULT_SYMBOLS[0], false);
       setStatus(`${state.user.username}'s model-trading-bot account was reset to defaults.`);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Account reset failed");
     } finally {
       setResettingAccount(false);
     }
+  }
+
+  async function inspectPaperRun(runId: number) {
+    setPaperRunsLoading(true);
+    setError(null);
+    try {
+      setSelectedPaperRun(await fetchPaperRun(runId));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Paper run detail failed");
+    } finally {
+      setPaperRunsLoading(false);
+    }
+  }
+
+  function loadPaperRunSnapshot(run: PaperRunDetail) {
+    setPaper(run.snapshot);
+    setSelectedPaperRun(run);
+    setStatus(`Loaded paper run from ${shortTime(run.created_at)} for review.`);
   }
 
   useEffect(() => {
@@ -549,11 +582,12 @@ export function App() {
         setLoginName(user.username);
         setApiUser(user.id);
         fetchUserState()
-          .then((state) => {
+          .then(async (state) => {
             setCurrentUser(state.user);
             if (state.paper_portfolio?.snapshot) {
               setPaper(state.paper_portfolio.snapshot);
             }
+            setPaperRuns(await fetchPaperRuns().catch(() => []));
           })
           .catch(() => {
             window.localStorage.removeItem("modelTradingBotUser");
@@ -699,6 +733,9 @@ export function App() {
         <BacktestingPage
           selectedSymbol={selectedSymbol}
           backtest={backtest}
+          paper={paper}
+          paperRuns={paperRuns}
+          selectedPaperRun={selectedPaperRun}
           latest={latest}
           strategy={strategy}
           strategies={strategies}
@@ -712,8 +749,11 @@ export function App() {
           savingStrategy={savingStrategy}
           resettingAccount={resettingAccount}
           comparisonLoading={comparisonLoading}
+          paperRunsLoading={paperRunsLoading}
           runSelectedBacktest={runSelectedBacktest}
           runStrategyComparison={runStrategyComparison}
+          inspectPaperRun={inspectPaperRun}
+          loadPaperRunSnapshot={loadPaperRunSnapshot}
         />
       ) : null}
     </main>
@@ -1323,6 +1363,9 @@ function SignalTrendExplorer({
 function BacktestingPage({
   selectedSymbol,
   backtest,
+  paper,
+  paperRuns,
+  selectedPaperRun,
   latest,
   strategy,
   strategies,
@@ -1336,11 +1379,17 @@ function BacktestingPage({
   savingStrategy,
   resettingAccount,
   comparisonLoading,
+  paperRunsLoading,
   runSelectedBacktest,
-  runStrategyComparison
+  runStrategyComparison,
+  inspectPaperRun,
+  loadPaperRunSnapshot
 }: {
   selectedSymbol: string;
   backtest: BacktestResult | null;
+  paper: PaperSnapshot | null;
+  paperRuns: PaperRunSummary[];
+  selectedPaperRun: PaperRunDetail | null;
   latest: OverviewRow | undefined;
   strategy: StrategyInfo | null;
   strategies: StrategyInfo[];
@@ -1354,8 +1403,11 @@ function BacktestingPage({
   savingStrategy: boolean;
   resettingAccount: boolean;
   comparisonLoading: boolean;
+  paperRunsLoading: boolean;
   runSelectedBacktest: () => void;
   runStrategyComparison: () => void;
+  inspectPaperRun: (runId: number) => void;
+  loadPaperRunSnapshot: (run: PaperRunDetail) => void;
 }) {
   return (
     <section className="backtestLayout">
@@ -1384,6 +1436,16 @@ function BacktestingPage({
         comparison={strategyComparison}
         comparisonLoading={comparisonLoading}
         runStrategyComparison={runStrategyComparison}
+      />
+
+      <PaperRunJournal
+        paper={paper}
+        runs={paperRuns}
+        selectedRun={selectedPaperRun}
+        strategies={strategies}
+        loading={paperRunsLoading}
+        inspectRun={inspectPaperRun}
+        loadRun={loadPaperRunSnapshot}
       />
 
       <div className="panel">
@@ -1577,6 +1639,117 @@ function StrategyComparisonPanel({
             ) : null}
           </tbody>
         </table>
+      </div>
+    </div>
+  );
+}
+
+function PaperRunJournal({
+  paper,
+  runs,
+  selectedRun,
+  strategies,
+  loading,
+  inspectRun,
+  loadRun
+}: {
+  paper: PaperSnapshot | null;
+  runs: PaperRunSummary[];
+  selectedRun: PaperRunDetail | null;
+  strategies: StrategyInfo[];
+  loading: boolean;
+  inspectRun: (runId: number) => void;
+  loadRun: (run: PaperRunDetail) => void;
+}) {
+  return (
+    <div className="panel paperJournalPanel" data-testid="paper-run-journal">
+      <div className="panelHeader">
+        <div>
+          <h2>Paper Run Journal</h2>
+          <span>{runs.length ? `${runs.length} saved runs` : "No saved runs"}</span>
+        </div>
+        <History size={18} />
+      </div>
+      <div className="paperJournalSummary">
+        <SmallMetric label="Visible Equity" value={paper ? money.format(paper.equity) : "-"} />
+        <SmallMetric label="Visible Cash" value={paper ? money.format(paper.cash) : "-"} />
+        <SmallMetric label="Positions" value={paper ? String(paper.positions.length) : "-"} />
+        <SmallMetric label="Orders" value={paper ? String(paper.orders.length) : "-"} />
+      </div>
+      <div className="paperJournalGrid">
+        <div className="tableWrap paperRunTable">
+          <table>
+            <thead>
+              <tr>
+                <th>Run</th>
+                <th>Strategy</th>
+                <th>Symbols</th>
+                <th>Equity</th>
+                <th>Orders</th>
+                <th>Detail</th>
+              </tr>
+            </thead>
+            <tbody>
+              {runs.map((run) => (
+                <tr key={run.id} className={selectedRun?.id === run.id ? "activeRow" : ""}>
+                  <td>{shortDateTime(run.created_at)}</td>
+                  <td>{paperRunStrategyLabel(run, strategies)}</td>
+                  <td>{run.symbols.join(", ")}</td>
+                  <td>{typeof run.equity === "number" ? money.format(run.equity) : "-"}</td>
+                  <td>{run.order_count}</td>
+                  <td>
+                    <button className="iconTableButton" type="button" onClick={() => inspectRun(run.id)} disabled={loading} title="View paper run">
+                      {loading && selectedRun?.id === run.id ? <RefreshCw size={15} className="spin" /> : <Eye size={15} />}
+                    </button>
+                  </td>
+                </tr>
+              ))}
+              {!runs.length ? (
+                <tr>
+                  <td colSpan={6}>Run paper trading to start the journal.</td>
+                </tr>
+              ) : null}
+            </tbody>
+          </table>
+        </div>
+        <div className="paperRunDetail">
+          {selectedRun ? (
+            <>
+              <div className="paperRunDetailHeader">
+                <div>
+                  <strong>{shortDateTime(selectedRun.created_at)}</strong>
+                  <span>{paperRunStrategyLabel(selectedRun, strategies)}</span>
+                </div>
+                <button className="commandButton compact" type="button" onClick={() => loadRun(selectedRun)}>
+                  <Play size={17} />
+                  Load Snapshot
+                </button>
+              </div>
+              <div className="metricStrip slim">
+                <SmallMetric label="Requested" value={money.format(selectedRun.requested_cash)} />
+                <SmallMetric label="Cash" value={money.format(selectedRun.snapshot.cash)} />
+                <SmallMetric label="Equity" value={money.format(selectedRun.snapshot.equity)} />
+                <SmallMetric label="Symbols" value={selectedRun.symbols.join(", ")} />
+              </div>
+              <div className="paperRunOrders">
+                {(selectedRun.snapshot.orders ?? []).slice(0, 8).map((order) => (
+                  <div key={`${order.sym}-${order.side}-${order.reason}`}>
+                    <strong>{order.sym}</strong>
+                    <span>{order.side}</span>
+                    <span>{money.format(order.notional)}</span>
+                    <small>{order.reason}</small>
+                  </div>
+                ))}
+                {!selectedRun.snapshot.orders.length ? <span className="mutedText">No orders in this snapshot.</span> : null}
+              </div>
+            </>
+          ) : (
+            <div className="emptyState">
+              <strong>Select a saved run</strong>
+              <p>Open a run to inspect its stored orders, cash, equity, and symbols.</p>
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );
@@ -2238,6 +2411,24 @@ function shortTime(value: string | null | undefined) {
   }
   const parsed = new Date(value);
   return Number.isNaN(parsed.getTime()) ? "-" : parsed.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+}
+
+function shortDateTime(value: string | null | undefined) {
+  if (!value) {
+    return "-";
+  }
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) {
+    return "-";
+  }
+  return `${parsed.toLocaleDateString()} ${parsed.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}`;
+}
+
+function paperRunStrategyLabel(run: PaperRunSummary | PaperRunDetail, strategies: StrategyInfo[]) {
+  if (run.custom_strategy?.name) {
+    return run.custom_strategy.name;
+  }
+  return strategies.find((item) => item.id === run.strategy_id)?.label ?? titleCase(run.strategy_id.replace(/_/g, " "));
 }
 
 function labelPage(page: Page) {

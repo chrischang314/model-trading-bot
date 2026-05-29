@@ -2,20 +2,20 @@
 
 ## Current Candidate
 
-- Branch/worktree: `projects-lan-repair-invalid-symbol` for the Projects LAN invalid-symbol repair.
-- Repair: symbol-specific explain, timeseries, and backtest reads return HTTP 404 with a clear "No market data available" detail when auto-ingest finds no provider rows; pure provider outages return HTTP 502.
-- Feature: Backtesting strategy comparison plus diagnostics freshness status.
-- Backend: `POST /api/backtests/compare` compares up to 8 strategy IDs on one symbol and returns compact sorted metric summaries.
-- Backend: `GET /api/diagnostics` reports `age_days` and `stale` for bar and signal frames.
-- Frontend: Backtesting page has a Strategy Comparison panel that compares built-ins and includes the active custom or saved strategy when selected.
-- Frontend: The Home page Operations panel separates Market Data from Signals and shows fresh/stale age text for both.
-- Tooling: `frontend/pnpm-workspace.yaml` approves the `esbuild` build script needed by Vite under pnpm 11.
+- Branch/worktree: `model-trading-bot-implementer-b-2026-05-29-paper-run-journal` at `C:\Users\chris\Projects\model-trading-bot-implementer-b-2026-05-29-paper-run-journal`.
+- Feature: Paper Trading Run Journal and Replay for `modeltradingbot.lan`.
+- Backend: `POST /api/paper/run` now appends a user-scoped run record while preserving the latest `GET /api/paper/portfolio` snapshot.
+- Backend: `GET /api/paper/runs` returns a compact newest-first run list; `GET /api/paper/runs/{id}` returns full run detail scoped to the signed-in user.
+- Reset: `POST /api/user/account/reset` clears saved scorecards, latest paper snapshot, and the user's paper run history.
+- Frontend: Backtesting now includes a Paper Run Journal panel with run list, detail inspection, and a load snapshot action that updates the visible paper view without posting a new run.
+- Minor repair: `StooqProvider` now passes `period` into the helper that already used it, fixing a pre-existing `ruff` undefined-name failure.
 
 ## Verification
 
-- Run backend tests from `backend/` with `..\.venv\Scripts\python.exe -m pytest`.
-- Install browser-check tooling with `..\.venv\Scripts\python.exe -m pip install -r requirements-dev.txt` and `..\.venv\Scripts\python.exe -m playwright install chromium`.
-- Run the frontend build from `frontend/` with an available Node binary, for example:
+- Baseline before edits: backend suite passed with `15 passed, 2 warnings`.
+- Backend command passed after edits: from `backend/`, `C:\Users\chris\Projects\model-trading-bot\.venv\Scripts\python.exe -m pytest` (`16 passed, 2 warnings`).
+- Python lint passed after edits: from repo root, `uvx ruff check backend`.
+- Frontend command: from `frontend/`, run:
 
 ```powershell
 $node = 'C:\Users\chris\AppData\Local\OpenAI\Codex\bin\node.exe'
@@ -23,10 +23,11 @@ $node = 'C:\Users\chris\AppData\Local\OpenAI\Codex\bin\node.exe'
 & $node .\node_modules\vite\bin\vite.js build
 ```
 
-## Notes
+The B worktree used an ignored `frontend\node_modules` junction to the main checkout's lockfile-backed install because `pnpm` is not on PATH in this shell.
+- Browser smoke passed against local backend/frontend: login, two paper run posts, Backtesting journal list/detail, and Load Snapshot status.
 
-- Bars and signals become stale after more than three calendar days without a latest row.
-- Reproduced before the repair: `GET /api/explain/NO_SUCH_SYMBOL_123`, `GET /api/timeseries/NO_SUCH_SYMBOL_123`, and `POST /api/backtests` for `NO_SUCH_SYMBOL_123` returned HTTP 500 on the LAN deployment.
-- `POST /api/symbols` already returned a handled provider error and was left unchanged.
-- The repair intentionally does not convert storage or unexpected application exceptions into invalid-symbol responses.
-- Fallback provider behavior is intentionally asymmetric: a pure provider failure stays `502`, but a mixed "no rows" plus fallback parser/API-key failure is treated as `404` for symbol-specific reads because the primary signal is that the requested symbol has no market data.
+## Judge Notes
+
+- This is a project-scoped implementer B candidate for the 2026-05-29 ranked model-trading-bot brief.
+- No broker credentials, paid services, KDB license changes, Kubernetes values, or real trade execution were added.
+- Deploy through `container-orchestrator` only if the judge selects this candidate; then verify `http://modeltradingbot.lan/`, `GET /api/paper/runs`, run-detail isolation, and Backtesting journal load behavior.

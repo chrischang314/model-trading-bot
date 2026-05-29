@@ -437,13 +437,26 @@ def paper(request: PaperRequest, current_user: dict = Depends(_current_user)) ->
     strategy_id, custom_strategy, _ = _resolve_requested_strategy(request.strategy_id, custom_strategy, current_user)
     signals = _signals_or_bootstrap(symbols, strategy_id, custom_strategy)
     snapshot = run_paper_snapshot(signals, request.cash)
-    auth_store.save_paper_portfolio(current_user["id"], snapshot, request.cash, request.strategy_id, custom_strategy)
+    auth_store.save_paper_run(current_user["id"], snapshot, symbols, request.cash, request.strategy_id, custom_strategy)
     return ApiEnvelope(data=snapshot)
 
 
 @app.get("/api/paper/portfolio", response_model=ApiEnvelope)
 def paper_portfolio(current_user: dict = Depends(_current_user)) -> ApiEnvelope:
     return ApiEnvelope(data=auth_store.get_paper_portfolio(current_user["id"]))
+
+
+@app.get("/api/paper/runs", response_model=ApiEnvelope)
+def paper_runs(limit: int = Query(default=20, ge=1, le=100), current_user: dict = Depends(_current_user)) -> ApiEnvelope:
+    return ApiEnvelope(data=auth_store.list_paper_runs(current_user["id"], limit=limit))
+
+
+@app.get("/api/paper/runs/{run_id}", response_model=ApiEnvelope)
+def paper_run(run_id: int, current_user: dict = Depends(_current_user)) -> ApiEnvelope:
+    run = auth_store.get_paper_run(current_user["id"], run_id)
+    if run is None:
+        raise HTTPException(status_code=404, detail="Paper run not found")
+    return ApiEnvelope(data=run)
 
 
 def run_ingestion(request: IngestRequest) -> IngestResponse:

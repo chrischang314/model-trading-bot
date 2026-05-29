@@ -67,6 +67,20 @@ class SharedAuthStore:
                     custom_strategy_json TEXT,
                     updated_at TEXT NOT NULL
                 );
+
+                CREATE TABLE IF NOT EXISTS model_trading_bot_paper_runs (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    user_id INTEGER NOT NULL,
+                    symbols_json TEXT NOT NULL,
+                    requested_cash REAL NOT NULL,
+                    strategy_id TEXT NOT NULL,
+                    custom_strategy_json TEXT,
+                    snapshot_json TEXT NOT NULL,
+                    created_at TEXT NOT NULL
+                );
+
+                CREATE INDEX IF NOT EXISTS idx_model_trading_bot_paper_runs_user_created
+                ON model_trading_bot_paper_runs (user_id, created_at DESC, id DESC);
                 """
             )
 
@@ -190,6 +204,47 @@ class SharedAuthStore:
             )
         return self.get_paper_portfolio(user_id) or {"snapshot": snapshot, "updated_at": now}
 
+    def save_paper_run(
+        self,
+        user_id: int,
+        snapshot: dict[str, Any],
+        symbols: list[str],
+        cash: float,
+        strategy_id: str,
+        custom_strategy: dict[str, Any] | None,
+    ) -> dict[str, Any]:
+        now = utcnow()
+        clean_symbols = [str(symbol).upper() for symbol in symbols]
+        raw_symbols = json.dumps(clean_symbols, sort_keys=True)
+        raw_snapshot = json.dumps(snapshot, sort_keys=True)
+        raw_custom = json.dumps(custom_strategy, sort_keys=True) if custom_strategy else None
+        with self._connect() as conn:
+            cursor = conn.execute(
+                """
+                INSERT INTO model_trading_bot_paper_runs
+                (user_id, symbols_json, requested_cash, strategy_id, custom_strategy_json, snapshot_json, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                """,
+                (user_id, raw_symbols, cash, strategy_id, raw_custom, raw_snapshot, now),
+            )
+            conn.execute(
+                """
+                INSERT INTO model_trading_bot_paper_portfolios
+                (user_id, snapshot_json, cash, strategy_id, custom_strategy_json, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?)
+                ON CONFLICT(user_id) DO UPDATE SET
+                    snapshot_json = excluded.snapshot_json,
+                    cash = excluded.cash,
+                    strategy_id = excluded.strategy_id,
+                    custom_strategy_json = excluded.custom_strategy_json,
+                    updated_at = excluded.updated_at
+                """,
+                (user_id, raw_snapshot, cash, strategy_id, raw_custom, now),
+            )
+            row = conn.execute("SELECT * FROM model_trading_bot_paper_runs WHERE id = ?", (cursor.lastrowid,)).fetchone()
+        assert row is not None
+        return self._paper_run(row, include_snapshot=True)
+
     def get_paper_portfolio(self, user_id: int) -> dict[str, Any] | None:
         with self._connect() as conn:
             row = conn.execute(
@@ -206,11 +261,34 @@ class SharedAuthStore:
             "updated_at": row["updated_at"],
         }
 
+    def list_paper_runs(self, user_id: int, limit: int = 20) -> list[dict[str, Any]]:
+        safe_limit = max(1, min(int(limit), 100))
+        with self._connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT * FROM model_trading_bot_paper_runs
+                WHERE user_id = ?
+                ORDER BY created_at DESC, id DESC
+                LIMIT ?
+                """,
+                (user_id, safe_limit),
+            ).fetchall()
+        return [self._paper_run(row, include_snapshot=False) for row in rows]
+
+    def get_paper_run(self, user_id: int, run_id: int) -> dict[str, Any] | None:
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT * FROM model_trading_bot_paper_runs WHERE user_id = ? AND id = ?",
+                (user_id, run_id),
+            ).fetchone()
+        return self._paper_run(row, include_snapshot=True) if row else None
+
     def reset_model_account(self, user_id: int) -> dict[str, Any]:
         with self._connect() as conn:
             conn.execute("DELETE FROM model_trading_bot_profiles WHERE user_id = ?", (user_id,))
             conn.execute("DELETE FROM model_trading_bot_strategies WHERE user_id = ?", (user_id,))
             conn.execute("DELETE FROM model_trading_bot_paper_portfolios WHERE user_id = ?", (user_id,))
+            conn.execute("DELETE FROM model_trading_bot_paper_runs WHERE user_id = ?", (user_id,))
         self.ensure_model_profile(user_id)
         return self.user_state(user_id)
 
@@ -248,3 +326,29 @@ class SharedAuthStore:
             "created_at": row["created_at"],
             "updated_at": row["updated_at"],
         }
+
+    @staticmethod
+    def _paper_run(row: sqlite3.Row, include_snapshot: bool) -> dict[str, Any]:
+        snapshot = json.loads(row["snapshot_json"])
+        positions = snapshot.get("positions") or []
+        orders = snapshot.get("orders") or []
+        warnings = snapshot.get("warnings") or []
+        error_flags = snapshot.get("error_flags") or []
+        record = {
+            "id": row["id"],
+            "user_id": row["user_id"],
+            "created_at": row["created_at"],
+            "symbols": json.loads(row["symbols_json"]),
+            "strategy_id": row["strategy_id"],
+            "custom_strategy": json.loads(row["custom_strategy_json"]) if row["custom_strategy_json"] else None,
+            "requested_cash": row["requested_cash"],
+            "result_cash": snapshot.get("cash"),
+            "equity": snapshot.get("equity"),
+            "position_count": len(positions),
+            "order_count": len(orders),
+            "warnings": warnings if isinstance(warnings, list) else [str(warnings)],
+            "error_flags": error_flags if isinstance(error_flags, list) else [str(error_flags)],
+        }
+        if include_snapshot:
+            record["snapshot"] = snapshot
+        return record
