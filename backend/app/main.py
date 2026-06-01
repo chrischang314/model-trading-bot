@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 from datetime import UTC, date, datetime
+from time import perf_counter
 
 import pandas as pd
 from fastapi import Depends, FastAPI, Header, HTTPException, Query
@@ -22,6 +23,7 @@ from app.models import (
 from app.services.auth import SharedAuthStore
 from app.services.backtest import run_long_cash_backtest
 from app.services.data_provider import MarketDataProviderError, NoMarketDataError, create_provider
+from app.services.ingest_runs import IngestRunStore
 from app.services.paper import run_paper_snapshot
 from app.services.signals import SIGNAL_CATALOG, calculate_signals
 from app.services.strategies import CUSTOM_STRATEGY_ID, DEFAULT_STRATEGY_ID, apply_strategy, get_strategy_metadata, list_strategies
@@ -45,6 +47,7 @@ provider = create_provider(settings.data_provider)
 storage = create_storage(settings)
 auth_store = SharedAuthStore(settings.shared_auth_db)
 universe_service = SP500UniverseService(settings.local_data_dir / "universe" / "sp500.json", settings.sp500_refresh_hours)
+ingest_run_store = IngestRunStore(settings.local_data_dir / "ingest_runs.json")
 
 
 def _current_user(
@@ -104,7 +107,7 @@ async def bootstrap() -> None:
         asyncio.create_task(_refresh_universe_periodically())
     if settings.bootstrap_on_startup:
         try:
-            run_ingestion(IngestRequest(symbols=list(settings.default_symbols), period="2y"))
+            run_ingestion(IngestRequest(symbols=list(settings.default_symbols), period="2y"), trigger="startup")
         except Exception:
             pass
 
@@ -147,6 +150,10 @@ def _diagnostics_snapshot() -> dict:
         "bars": _storage_frame_diagnostics(lambda: storage.get_bars(symbols=symbols), symbols, generated_at.date()),
         "signals": _storage_frame_diagnostics(lambda: storage.get_signals(symbols=symbols), symbols, generated_at.date()),
         "universe": universe_service.cache_status(),
+        "ingest": {
+            "latest": ingest_run_store.latest(),
+            "recent": ingest_run_store.list_runs(limit=5),
+        },
     }
 
 
@@ -201,7 +208,7 @@ def symbols() -> ApiEnvelope:
 @app.post("/api/symbols", response_model=IngestResponse)
 def add_symbols(request: SymbolRequest) -> IngestResponse:
     try:
-        return run_ingestion(IngestRequest(symbols=request.symbols, period=request.period))
+        return run_ingestion(IngestRequest(symbols=request.symbols, period=request.period), trigger="symbol_add")
     except Exception as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
 
@@ -285,9 +292,14 @@ def refresh_sp500_universe() -> ApiEnvelope:
 @app.post("/api/ingest", response_model=IngestResponse)
 def ingest(request: IngestRequest) -> IngestResponse:
     try:
-        return run_ingestion(request)
+        return run_ingestion(request, trigger="manual")
     except Exception as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+
+@app.get("/api/ingest/runs", response_model=ApiEnvelope)
+def ingest_runs(limit: int = Query(default=25, ge=1, le=50)) -> ApiEnvelope:
+    return ApiEnvelope(data=ingest_run_store.list_runs(limit=limit))
 
 
 @app.get("/api/overview", response_model=ApiEnvelope)
@@ -463,20 +475,70 @@ def paper_run_detail(run_id: int, current_user: dict = Depends(_current_user)) -
     return ApiEnvelope(data=run)
 
 
-def run_ingestion(request: IngestRequest) -> IngestResponse:
+def run_ingestion(request: IngestRequest, trigger: str = "manual") -> IngestResponse:
     symbols = normalize_symbols(request.symbols or settings.default_symbols)
-    bars = provider.fetch_daily_bars(symbols, start=request.start, end=request.end, period=request.period)
-    bars_count = storage.save_bars(bars)
+    started = perf_counter()
+    bars = pd.DataFrame()
+    try:
+        bars = provider.fetch_daily_bars(symbols, start=request.start, end=request.end, period=request.period)
+        present_symbols = _symbols_in_frame(bars)
+        no_data_symbols = sorted(set(symbols) - set(present_symbols))
+        bars_count = storage.save_bars(bars)
 
-    stored_bars = storage.get_bars(symbols=symbols)
-    signals = calculate_signals(stored_bars)
-    signals_count = storage.save_signals(signals)
-    return IngestResponse(
-        symbols=symbols,
-        bars=bars_count,
-        signals=signals_count,
-        storage_backend=settings.storage_backend,
-    )
+        stored_bars = storage.get_bars(symbols=symbols)
+        signals = calculate_signals(stored_bars)
+        signals_count = storage.save_signals(signals)
+        ingest_run_store.record(
+            _ingest_run_payload(
+                request,
+                symbols,
+                trigger,
+                started,
+                status="partial" if no_data_symbols else "success",
+                bars_written=bars_count,
+                signals_written=signals_count,
+                no_data_symbols=no_data_symbols,
+                bars=bars,
+            )
+        )
+        return IngestResponse(
+            symbols=symbols,
+            bars=bars_count,
+            signals=signals_count,
+            storage_backend=settings.storage_backend,
+        )
+    except NoMarketDataError as exc:
+        ingest_run_store.record(
+            _ingest_run_payload(
+                request,
+                symbols,
+                trigger,
+                started,
+                status="failure",
+                bars_written=0,
+                signals_written=0,
+                no_data_symbols=symbols,
+                bars=bars,
+                error=exc,
+            )
+        )
+        raise
+    except Exception as exc:
+        ingest_run_store.record(
+            _ingest_run_payload(
+                request,
+                symbols,
+                trigger,
+                started,
+                status="failure",
+                bars_written=0,
+                signals_written=0,
+                no_data_symbols=[],
+                bars=bars,
+                error=exc,
+            )
+        )
+        raise
 
 
 def _signals_or_bootstrap(
@@ -486,18 +548,81 @@ def _signals_or_bootstrap(
 ) -> pd.DataFrame:
     signals = storage.get_signals(symbols=symbols)
     if signals.empty and settings.auto_ingest_on_empty:
-        run_ingestion(IngestRequest(symbols=symbols, period="2y"))
+        run_ingestion(IngestRequest(symbols=symbols, period="2y"), trigger="auto_bootstrap")
         signals = storage.get_signals(symbols=symbols)
     return apply_strategy(signals, strategy_id, custom_strategy)
 
 
 def _run_auto_ingestion_or_404(symbols: list[str], request: IngestRequest) -> None:
     try:
-        run_ingestion(request)
+        run_ingestion(request, trigger="auto_symbol")
     except NoMarketDataError as exc:
         _raise_no_market_data(symbols, exc)
     except MarketDataProviderError as exc:
         raise HTTPException(status_code=502, detail=f"Market data provider failed: {exc}") from exc
+
+
+def _ingest_run_payload(
+    request: IngestRequest,
+    symbols: list[str],
+    trigger: str,
+    started: float,
+    *,
+    status: str,
+    bars_written: int,
+    signals_written: int,
+    no_data_symbols: list[str],
+    bars: pd.DataFrame,
+    error: Exception | None = None,
+) -> dict:
+    sources = _source_counts(bars)
+    return {
+        "trigger": trigger,
+        "status": status,
+        "requested_symbols": symbols,
+        "period": request.period,
+        "start": request.start.isoformat() if request.start else None,
+        "end": request.end.isoformat() if request.end else None,
+        "provider_mode": settings.data_provider,
+        "storage_backend": settings.storage_backend,
+        "sources": sorted(sources),
+        "source_counts": sources,
+        "bars_written": bars_written,
+        "signals_written": signals_written,
+        "bars_returned": int(len(bars)) if not bars.empty else 0,
+        "date_range": _frame_date_range(bars),
+        "no_data_symbols": no_data_symbols,
+        "duration_ms": round(max(perf_counter() - started, 0) * 1000, 2),
+        "error_type": type(error).__name__ if error else None,
+        "error_summary": _error_summary(error) if error else None,
+    }
+
+
+def _symbols_in_frame(frame: pd.DataFrame) -> list[str]:
+    if frame.empty or "sym" not in frame.columns:
+        return []
+    return normalize_symbols(frame["sym"].dropna().astype(str).tolist())
+
+
+def _source_counts(frame: pd.DataFrame) -> dict[str, int]:
+    if frame.empty or "source" not in frame.columns:
+        return {}
+    counts = frame["source"].fillna("unknown").astype(str).value_counts().sort_index()
+    return {str(source): int(count) for source, count in counts.items()}
+
+
+def _frame_date_range(frame: pd.DataFrame) -> dict[str, str | None]:
+    if frame.empty or "date" not in frame.columns:
+        return {"start": None, "end": None}
+    dates = pd.to_datetime(frame["date"], errors="coerce").dropna()
+    if dates.empty:
+        return {"start": None, "end": None}
+    return {"start": dates.min().date().isoformat(), "end": dates.max().date().isoformat()}
+
+
+def _error_summary(error: Exception) -> str:
+    summary = " ".join(str(error).split())
+    return (summary or type(error).__name__)[:240]
 
 
 def _raise_no_market_data(symbols: list[str], exc: Exception | None = None) -> None:

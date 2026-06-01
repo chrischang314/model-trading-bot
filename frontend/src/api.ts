@@ -2,6 +2,7 @@ import type {
   BacktestComparison,
   BacktestResult,
   CustomStrategyConfig,
+  IngestRun,
   OverviewRow,
   PaperPortfolio,
   PaperRunDetail,
@@ -73,6 +74,11 @@ export async function ingest(symbols: string[]): Promise<void> {
     method: "POST",
     body: JSON.stringify({ symbols, period: "2y" })
   });
+}
+
+export async function fetchIngestRuns(limit = 25): Promise<IngestRun[]> {
+  const envelope = await request<{ data: IngestRun[] }>(`/ingest/runs?limit=${limit}`);
+  return envelope.data;
 }
 
 export async function addSymbols(symbols: string[]): Promise<void> {

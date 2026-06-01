@@ -280,6 +280,34 @@ export type DiagnosticsFrame = {
   error?: string;
 };
 
+export type IngestRunStatus = "success" | "partial" | "failure";
+
+export type IngestRun = {
+  id: string;
+  created_at: string;
+  trigger: string;
+  status: IngestRunStatus;
+  requested_symbols: string[];
+  period: string;
+  start: string | null;
+  end: string | null;
+  provider_mode: string;
+  storage_backend: string;
+  sources: string[];
+  source_counts: Record<string, number>;
+  bars_written: number;
+  signals_written: number;
+  bars_returned: number;
+  date_range: {
+    start: string | null;
+    end: string | null;
+  };
+  no_data_symbols: string[];
+  duration_ms: number;
+  error_type: string | null;
+  error_summary: string | null;
+};
+
 export type SystemDiagnostics = {
   app: string;
   generated_at: string;
@@ -300,5 +328,9 @@ export type SystemDiagnostics = {
     count: number;
     stale: boolean;
     error?: string;
+  };
+  ingest: {
+    latest: IngestRun | null;
+    recent: IngestRun[];
   };
 };

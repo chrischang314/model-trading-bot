@@ -71,11 +71,11 @@ class CompareFakeAuthStore:
         }
 
 
-def fail_ingestion(request) -> None:
+def fail_ingestion(request, trigger="manual") -> None:
     raise NoMarketDataError("provider returned no rows")
 
 
-def provider_error(request) -> None:
+def provider_error(request, trigger="manual") -> None:
     raise MarketDataProviderError("upstream timeout")
 
 

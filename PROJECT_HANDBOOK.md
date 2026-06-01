@@ -13,6 +13,7 @@ Model Trading Bot is an educational market-data stack. It does not place real tr
 - Strategy comparisons run several long/cash rules on the same symbol and assumptions so return, drawdown, Sharpe, exposure, and trade count can be compared without changing pages.
 - Paper snapshots turn the latest strategy result into a simulated portfolio without sending orders.
 - Paper run journals keep an append-only, user-scoped history of explicit paper runs so prior symbols, strategy settings, intended orders, positions, cash, and equity can be reviewed or loaded back into the visible paper view.
+- Ingest run records are local operational notes for data refresh attempts. They explain what was requested, which source labels came back, what rows were written, which symbols had no rows, how long the attempt took, and whether the result succeeded, partially succeeded, or failed.
 
 ## Operational Checks
 
@@ -23,10 +24,11 @@ Use `GET /api/diagnostics` or the Home page Operations panel for a quick health 
 - Market Data shows the latest stored bar date, row age, stale status, and whether watched symbols are missing rows.
 - Signals shows the latest calculated signal date, row age, stale status, and whether watched symbols are missing rows.
 - S&P Cache shows whether the cached S&P 500 universe exists and whether it is stale.
+- Ingest Runs shows the latest local ingest attempt and a short recent history, including retry actions for failed or partial symbols.
 
 Bars and signals are marked stale after more than three calendar days without a latest row. This keeps weekday outages visible while avoiding weekend-only false alarms.
 
-The diagnostics endpoint must not trigger an S&P 500 internet refresh. Manual refresh still belongs to `POST /api/universe/sp500/refresh` or the S&P 500 button in the dashboard.
+The diagnostics endpoint must not trigger an S&P 500 internet refresh or a market-data refresh. Manual refresh still belongs to `POST /api/ingest`, `POST /api/universe/sp500/refresh`, or the dashboard buttons.
 
 Symbol-specific read endpoints may auto-ingest when local signals are missing. If the provider cannot return data for a ticker, explain, timeseries, and backtest requests should return HTTP 404 with a clear no-market-data message. Pure provider outages should return HTTP 502, and storage or unexpected application failures should not be hidden as invalid-symbol responses. A mixed fallback result where one provider reports no rows and another provider fails to parse or authenticate should stay on the no-market-data path for symbol-specific reads.
 
@@ -35,4 +37,5 @@ Symbol-specific read endpoints may auto-ingest when local signals are missing. I
 - Keep the app clearly educational; do not imply investment advice.
 - Do not add live brokerage execution without explicit risk controls, authentication, audit logs, and user confirmation flows.
 - Keep paper replay read-only. Loading an old run should show the saved simulation snapshot, not fetch new market data or route orders.
+- Keep ingest provenance compact and non-sensitive. Store short provider/source summaries, not API keys, raw responses, credentials, stack traces, cookies, or browser/session data.
 - Keep credentials, KDB license files, local data, and generated frontend/backend artifacts out of git.

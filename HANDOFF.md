@@ -2,30 +2,32 @@
 
 ## Current Candidate
 
-- Branch: `model-trading-bot-implementer-a-2026-05-29-paper-run-journal`.
-- Feature: Paper Trading Run Journal And Replay for the `model-trading-bot` Projects LAN ranked brief.
-- Backend: `POST /api/paper/run` still updates the latest user paper portfolio and now appends a user-scoped row to `model_trading_bot_paper_runs`.
-- Backend: `GET /api/paper/runs` returns the signed-in user's newest-first compact run list; `GET /api/paper/runs/{id}` returns that user's full saved snapshot/detail or `404`.
-- Backend: account reset clears saved scorecards, latest paper portfolio, and the user's paper run history.
-- Frontend: Backtesting now has a Paper Run Journal panel with explicit Run Paper, recent runs, open detail, and Load Run replay into the visible Paper Equity state.
-- Frontend: app load now reads the latest saved paper portfolio instead of creating hidden paper runs during initial load, symbol changes, or strategy refreshes.
-- Docs: `README.md` and `PROJECT_HANDBOOK.md` describe the journal/replay behavior and read-only paper replay boundary.
-- Deployment: not deployed from this implementer branch; leave container image/cluster rollout to the judge-selected implementation.
+- Branch/worktree: `model-trading-bot-implementer-c-2026-06-01-ingest-provenance` at `C:\Users\chris\Projects\model-trading-bot-implementer-c-2026-06-01-ingest-provenance`.
+- Feature: Data Ingestion Provenance Center for the `model-trading-bot` Projects LAN ranked brief dated 2026-06-01.
+- Backend: ingestion now records a bounded local JSON journal at `LOCAL_DATA_DIR\ingest_runs.json`.
+- Backend: recorded attempts include trigger, requested symbols, period/start/end, provider mode, storage backend, source labels/counts, bars/signals written, returned bar count, date range, no-data symbols, duration, status, and short error summary.
+- Backend: `POST /api/ingest`, `POST /api/symbols`, startup bootstrap, broad auto-bootstrap, and symbol-specific auto-ingest attempts all record success, partial, or failure outcomes.
+- Backend: `GET /api/ingest/runs` returns recent newest-first ingest runs, and `GET /api/diagnostics` includes latest plus recent ingest summaries without forcing an internet refresh.
+- Frontend: the Home Operations panel shows ingest status and recent runs, with a retry button for failed or partial symbols through the existing ingest endpoint.
+- Docs: `README.md` and `PROJECT_HANDBOOK.md` describe the local non-sensitive ingest journal and retry behavior.
 
 ## Verification
 
-- Backend: from `backend/`, `..\.venv\Scripts\python.exe -m pytest` -> `17 passed, 2 warnings`.
-- Frontend: from `frontend/`, use the local Codex Node binary because `pnpm` is not on PATH:
+- Baseline before edits: backend pytest passed with `17 passed, 2 warnings`; frontend TypeScript/Vite build passed with the existing chunk-size warning.
+- Backend after edits: from `backend/`, `C:\Users\chris\Projects\model-trading-bot\.venv\Scripts\python.exe -m pytest` passed with `21 passed, 2 warnings`.
+- Frontend after edits: from `frontend/`, local Codex Node ran TypeScript build and Vite production build successfully; Vite still reports the existing chunk-size warning.
+- Diff check: `git diff --check` passed.
+- API smoke: local FastAPI on `127.0.0.1:18300` returned ingest summaries through `/api/diagnostics` and `/api/ingest/runs`.
+- Browser smoke: local Vite on `127.0.0.1:18380` verified login, Operations ingest provenance, retry affordance, Stock, Signals, Backtesting, Paper Run Journal visibility, and no console errors. Smoke servers were stopped.
 
-```powershell
-& 'C:\Users\chris\AppData\Local\OpenAI\Codex\bin\node.exe' .\node_modules\typescript\bin\tsc -b
-& 'C:\Users\chris\AppData\Local\OpenAI\Codex\bin\node.exe' .\node_modules\vite\bin\vite.js build
-```
+## Deployment Status
 
-- Frontend build passes with the existing Vite chunk-size warning.
+- Not deployed from this implementer branch.
+- No Kubernetes values, image tags, or container-orchestrator files were changed.
+- Judge should compare A/B/C candidates, choose one implementation, then build/push/deploy through `container-orchestrator` and verify `http://modeltradingbot.lan/`, `/api/diagnostics`, and `/api/ingest/runs`.
 
 ## Notes
 
-- Paper replay is intentionally read-only: loading an older run only displays the saved simulation snapshot and does not fetch market data, re-simulate, or route broker orders.
-- Run records persist requested symbols, requested cash, requested strategy id, resolved custom/saved strategy JSON when present, resulting cash/equity, positions, orders, warnings, and error flags.
-- Existing `GET /api/paper/portfolio` remains the compatibility/latest snapshot endpoint.
+- Do not store API keys, raw provider responses, stack traces, browser state, or credentials in ingest-run records.
+- Partial status means the provider returned rows for at least one requested symbol but not all requested symbols.
+- Symbol-specific no-market-data behavior is preserved: no-data reads still return `404`; provider outages still return `502`.
