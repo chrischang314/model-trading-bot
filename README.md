@@ -54,9 +54,13 @@ $env:STORAGE_BACKEND="local"
 
 ## Shared Local Login
 
-`model-trading-bot` uses a lightweight shared SQLite login database for local apps. Set `SHARED_AUTH_DB` to the same file path in `model-trading-bot`, `local-llm`, and `trading-bot`; without an override it defaults to `~/.local-webapps/auth.db` for non-container local runs.
+`model-trading-bot` uses the Projects LAN shared SQLite auth contract. Set `SHARED_AUTH_DB` to the same file path in local apps; without an override it defaults to `~/.local-webapps/auth.db` for non-container local runs. The database stores shared `users` plus hashed backend `auth_sessions`, and model-trading-bot keeps its app-specific profile, saved strategies, paper portfolio, and paper run journal keyed by the shared numeric `user_id`.
 
-The current login is intentionally username-only to match the existing `local-llm` flow. It is suitable for a trusted local lab, not public deployment. The numeric `user_id` from this shared database is used to scope model-trading-bot saved scorecards and paper portfolio snapshots.
+Register or sign in through `POST /api/auth/register` and `POST /api/auth/login`. Successful auth sets an HttpOnly `projects_lan_session` cookie with `SameSite=Lax` and `Path=/`; the optional `AUTH_COOKIE_DOMAIN` environment variable can scope that cookie across LAN hostnames. `POST /api/auth/logout` revokes the backend session and clears the cookie. Browser `localStorage` is only used for display hints, never as the auth authority.
+
+Public registration does not claim existing passwordless legacy rows by default. Use `AUTH_ALLOW_LEGACY_PASSWORD_CLAIM=true` only during a trusted migration window, or migrate legacy rows administratively.
+
+For cross-origin local frontend development, configure `CORS_ORIGINS` with the frontend origins that should be allowed to send credentials. Same-origin nginx deployments do not need a custom CORS setting.
 
 ## Quick Start
 
@@ -95,7 +99,7 @@ pnpm run dev -- --host 127.0.0.1 --port 5173
 
 The dashboard calls:
 
-- `POST /api/auth/login`, `GET /api/auth/me`, and `GET /api/user/state` for the shared local user.
+- `POST /api/auth/register`, `POST /api/auth/login`, `POST /api/auth/logout`, `GET /api/auth/me`, and `GET /api/user/state` for the shared Projects LAN session.
 - `POST /api/user/strategies` and `GET /api/user/strategies` for per-user saved scorecard strategies.
 - `POST /api/user/account/reset` to reset a model-trading-bot account back to default paper/account state.
 - `GET /api/symbols` to list default and stored symbols.

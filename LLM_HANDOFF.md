@@ -72,7 +72,9 @@ Key modules:
 Main API routes:
 
 - `GET /health`
+- `POST /api/auth/register`
 - `POST /api/auth/login`
+- `POST /api/auth/logout`
 - `GET /api/auth/me`
 - `GET /api/user/state`
 - `GET /api/user/strategies`
@@ -96,6 +98,8 @@ Main API routes:
 - `POST /api/backtests/compare`
 - `POST /api/paper/run`
 - `GET /api/paper/portfolio`
+- `GET /api/paper/runs`
+- `GET /api/paper/runs/{run_id}`
 
 Default watched symbols:
 
@@ -121,10 +125,10 @@ Strategy layer:
 
 Shared auth:
 
-- Local username-only auth is backed by SQLite at `SHARED_AUTH_DB`, defaulting to `~/.local-webapps/auth.db` outside containers.
+- Auth is backed by SQLite at `SHARED_AUTH_DB`, defaulting to `~/.local-webapps/auth.db` outside containers. Browser identity comes from the HttpOnly `projects_lan_session` server-side session cookie.
 - The shared table is `users`; model-trading-bot owns app-specific tables prefixed with `model_trading_bot_`.
-- `local-llm` and `trading-bot` were updated in sibling repos to use the same `SHARED_AUTH_DB` convention.
-- Frontend localStorage uses `sharedLocalUser` plus an app-specific fallback key.
+- `local-llm` and `trading-bot` are being aligned to the same `SHARED_AUTH_DB` and `projects_lan_session` convention.
+- Frontend localStorage is display-only. It must not store auth tokens or choose API users; `/api/auth/me` is the source of truth.
 
 ## KDB Details
 
@@ -190,7 +194,7 @@ Dashboard capabilities:
 - Trade Anatomy panel for stepping through simulated trade events and the backtest accounting flow
 - Strategy Comparison panel on Backtesting that calls `/api/backtests/compare` for a compact built-in/custom strategy leaderboard
 - Custom strategy scorecard builder on the Backtesting page
-- Paper orders/equity snapshot
+- Paper orders/equity snapshot plus scoped paper run history/detail replay
 
 Nginx production container proxies `/api/` and `/health` to the backend service.
 

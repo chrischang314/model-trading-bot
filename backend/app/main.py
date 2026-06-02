@@ -4,7 +4,7 @@ import asyncio
 from datetime import UTC, date, datetime
 
 import pandas as pd
-from fastapi import Depends, FastAPI, Header, HTTPException, Query
+from fastapi import Depends, FastAPI, HTTPException, Query, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import settings
@@ -19,7 +19,12 @@ from app.models import (
     SaveStrategyRequest,
     SymbolRequest,
 )
-from app.services.auth import SharedAuthStore
+from app.services.auth import (
+    SESSION_COOKIE_NAME,
+    InvalidCredentialsError,
+    SharedAuthStore,
+    UserAlreadyExistsError,
+)
 from app.services.backtest import run_long_cash_backtest
 from app.services.data_provider import MarketDataProviderError, NoMarketDataError, create_provider
 from app.services.paper import run_paper_snapshot
@@ -35,8 +40,8 @@ DATA_STALE_AFTER_DAYS = 3
 app = FastAPI(title="Model Trading Bot", version="0.1.0")
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=False,
+    allow_origins=list(settings.cors_origins),
+    allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -47,18 +52,39 @@ auth_store = SharedAuthStore(settings.shared_auth_db)
 universe_service = SP500UniverseService(settings.local_data_dir / "universe" / "sp500.json", settings.sp500_refresh_hours)
 
 
-def _current_user(
-    x_user_id: int | None = Header(default=None, alias="X-User-Id"),
-    user_id: int | None = Query(default=None),
-) -> dict:
-    requested_id = x_user_id or user_id
-    if requested_id:
-        user = auth_store.get_user(requested_id)
-        if not user:
-            raise HTTPException(status_code=401, detail="Unknown local user. Sign in again.")
-        auth_store.ensure_model_profile(user["id"])
-        return user
-    return auth_store.get_or_create_user("demo")
+def _current_user_optional(request: Request) -> dict | None:
+    return auth_store.get_user_by_session_token(request.cookies.get(SESSION_COOKIE_NAME))
+
+
+def _current_user_required(request: Request) -> dict:
+    user = _current_user_optional(request)
+    if user is None:
+        raise HTTPException(status_code=401, detail="Sign in before using this account-scoped endpoint.")
+    return user
+
+
+def _set_session_cookie(response: Response, token: str) -> None:
+    response.set_cookie(
+        SESSION_COOKIE_NAME,
+        token,
+        max_age=60 * 60 * 24 * settings.auth_session_ttl_days,
+        httponly=True,
+        samesite="lax",
+        path="/",
+        domain=settings.auth_cookie_domain,
+        secure=settings.auth_cookie_secure,
+    )
+
+
+def _clear_session_cookie(response: Response) -> None:
+    response.delete_cookie(
+        SESSION_COOKIE_NAME,
+        path="/",
+        domain=settings.auth_cookie_domain,
+        secure=settings.auth_cookie_secure,
+        httponly=True,
+        samesite="lax",
+    )
 
 
 def _strategy_context(
@@ -71,10 +97,12 @@ def _strategy_context(
     require_positive_macd: bool = Query(default=False),
     min_adx: float | None = Query(default=None),
     min_momentum_score: float | None = Query(default=None),
-    current_user: dict = Depends(_current_user),
+    current_user: dict | None = Depends(_current_user_optional),
 ) -> tuple[str, dict | None]:
     custom_strategy = None
     if strategy_id.startswith("user_strategy_"):
+        if current_user is None:
+            raise HTTPException(status_code=401, detail="Sign in before using a saved strategy.")
         try:
             saved_strategy_id = int(strategy_id.removeprefix("user_strategy_"))
         except ValueError as exc:
@@ -150,38 +178,68 @@ def _diagnostics_snapshot() -> dict:
     }
 
 
+def _auth_payload(user: dict) -> dict:
+    return {"user": user, **auth_store.user_state(user["id"])}
+
+
 @app.post("/api/auth/login", response_model=ApiEnvelope)
-def auth_login(request: LoginRequest) -> ApiEnvelope:
+def auth_login(request: LoginRequest, response: Response) -> ApiEnvelope:
     try:
-        user = auth_store.get_or_create_user(request.username)
+        user = auth_store.authenticate_user(request.username, request.password)
+        _set_session_cookie(response, auth_store.create_session(user["id"], settings.auth_session_ttl_days))
+    except InvalidCredentialsError as exc:
+        raise HTTPException(status_code=401, detail=str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-    return ApiEnvelope(data={"user": user, **auth_store.user_state(user["id"])})
+    return ApiEnvelope(data=_auth_payload(user))
+
+
+@app.post("/api/auth/register", response_model=ApiEnvelope)
+def auth_register(request: LoginRequest, response: Response) -> ApiEnvelope:
+    try:
+        user = auth_store.register_user(
+            request.username,
+            request.password,
+            allow_legacy_claim=settings.auth_allow_legacy_password_claim,
+        )
+        _set_session_cookie(response, auth_store.create_session(user["id"], settings.auth_session_ttl_days))
+    except UserAlreadyExistsError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return ApiEnvelope(data=_auth_payload(user))
+
+
+@app.post("/api/auth/logout", response_model=ApiEnvelope)
+def auth_logout(request: Request, response: Response) -> ApiEnvelope:
+    auth_store.revoke_session(request.cookies.get(SESSION_COOKIE_NAME))
+    _clear_session_cookie(response)
+    return ApiEnvelope(data={"ok": True})
 
 
 @app.get("/api/auth/me", response_model=ApiEnvelope)
-def auth_me(current_user: dict = Depends(_current_user)) -> ApiEnvelope:
-    return ApiEnvelope(data={"user": current_user, **auth_store.user_state(current_user["id"])})
+def auth_me(current_user: dict = Depends(_current_user_required)) -> ApiEnvelope:
+    return ApiEnvelope(data=_auth_payload(current_user))
 
 
 @app.get("/api/user/state", response_model=ApiEnvelope)
-def user_state(current_user: dict = Depends(_current_user)) -> ApiEnvelope:
-    return ApiEnvelope(data={"user": current_user, **auth_store.user_state(current_user["id"])})
+def user_state(current_user: dict = Depends(_current_user_required)) -> ApiEnvelope:
+    return ApiEnvelope(data=_auth_payload(current_user))
 
 
 @app.get("/api/user/strategies", response_model=ApiEnvelope)
-def user_strategies(current_user: dict = Depends(_current_user)) -> ApiEnvelope:
+def user_strategies(current_user: dict = Depends(_current_user_required)) -> ApiEnvelope:
     return ApiEnvelope(data=[_saved_strategy_metadata(item) for item in auth_store.list_user_strategies(current_user["id"])])
 
 
 @app.post("/api/user/strategies", response_model=ApiEnvelope)
-def save_user_strategy(request: SaveStrategyRequest, current_user: dict = Depends(_current_user)) -> ApiEnvelope:
+def save_user_strategy(request: SaveStrategyRequest, current_user: dict = Depends(_current_user_required)) -> ApiEnvelope:
     saved = auth_store.save_user_strategy(current_user["id"], request.strategy.model_dump())
     return ApiEnvelope(data=_saved_strategy_metadata(saved))
 
 
 @app.delete("/api/user/strategies/{strategy_id}", response_model=ApiEnvelope)
-def delete_user_strategy(strategy_id: int, current_user: dict = Depends(_current_user)) -> ApiEnvelope:
+def delete_user_strategy(strategy_id: int, current_user: dict = Depends(_current_user_required)) -> ApiEnvelope:
     deleted = auth_store.delete_user_strategy(current_user["id"], strategy_id)
     if not deleted:
         raise HTTPException(status_code=404, detail="Saved strategy not found")
@@ -189,7 +247,7 @@ def delete_user_strategy(strategy_id: int, current_user: dict = Depends(_current
 
 
 @app.post("/api/user/account/reset", response_model=ApiEnvelope)
-def reset_user_account(current_user: dict = Depends(_current_user)) -> ApiEnvelope:
+def reset_user_account(current_user: dict = Depends(_current_user_required)) -> ApiEnvelope:
     return ApiEnvelope(data={"user": current_user, **auth_store.reset_model_account(current_user["id"])})
 
 
@@ -207,8 +265,8 @@ def add_symbols(request: SymbolRequest) -> IngestResponse:
 
 
 @app.get("/api/strategies", response_model=ApiEnvelope)
-def strategies(current_user: dict = Depends(_current_user)) -> ApiEnvelope:
-    saved = [_saved_strategy_metadata(item) for item in auth_store.list_user_strategies(current_user["id"])]
+def strategies(current_user: dict | None = Depends(_current_user_optional)) -> ApiEnvelope:
+    saved = [_saved_strategy_metadata(item) for item in auth_store.list_user_strategies(current_user["id"])] if current_user else []
     return ApiEnvelope(data=[*list_strategies(), *saved])
 
 
@@ -331,7 +389,7 @@ def timeseries(
 
 
 @app.post("/api/backtests", response_model=ApiEnvelope)
-def backtest(request: BacktestRequest, current_user: dict = Depends(_current_user)) -> ApiEnvelope:
+def backtest(request: BacktestRequest, current_user: dict | None = Depends(_current_user_optional)) -> ApiEnvelope:
     _, signals = _load_backtest_signals(request.symbol, request.start, request.end)
     custom_strategy = request.custom_strategy.model_dump() if request.custom_strategy else None
     try:
@@ -352,7 +410,7 @@ def backtest(request: BacktestRequest, current_user: dict = Depends(_current_use
 
 
 @app.post("/api/backtests/compare", response_model=ApiEnvelope)
-def compare_backtests(request: BacktestComparisonRequest, current_user: dict = Depends(_current_user)) -> ApiEnvelope:
+def compare_backtests(request: BacktestComparisonRequest, current_user: dict | None = Depends(_current_user_optional)) -> ApiEnvelope:
     symbol, signals = _load_backtest_signals(request.symbol, request.start, request.end)
     requested_ids = request.strategy_ids or [item["id"] for item in list_strategies() if item["kind"] == "built_in"]
     strategy_ids = list(dict.fromkeys(strategy_id.strip() for strategy_id in requested_ids if strategy_id.strip()))
@@ -403,7 +461,7 @@ def _backtest_payload(
     signals: pd.DataFrame,
     strategy_id: str,
     custom_strategy: dict | None,
-    current_user: dict,
+    current_user: dict | None,
     initial_capital: float,
     fee_bps: float,
     slippage_bps: float,
@@ -431,7 +489,7 @@ def _backtest_payload(
 
 
 @app.post("/api/paper/run", response_model=ApiEnvelope)
-def paper(request: PaperRequest, current_user: dict = Depends(_current_user)) -> ApiEnvelope:
+def paper(request: PaperRequest, current_user: dict = Depends(_current_user_required)) -> ApiEnvelope:
     symbols = normalize_symbols(request.symbols or settings.default_symbols)
     custom_strategy = request.custom_strategy.model_dump() if request.custom_strategy else None
     strategy_id, custom_strategy, _ = _resolve_requested_strategy(request.strategy_id, custom_strategy, current_user)
@@ -443,20 +501,20 @@ def paper(request: PaperRequest, current_user: dict = Depends(_current_user)) ->
 
 
 @app.get("/api/paper/portfolio", response_model=ApiEnvelope)
-def paper_portfolio(current_user: dict = Depends(_current_user)) -> ApiEnvelope:
+def paper_portfolio(current_user: dict = Depends(_current_user_required)) -> ApiEnvelope:
     return ApiEnvelope(data=auth_store.get_paper_portfolio(current_user["id"]))
 
 
 @app.get("/api/paper/runs", response_model=ApiEnvelope)
 def paper_runs(
     limit: int = Query(default=25, ge=1, le=100),
-    current_user: dict = Depends(_current_user),
+    current_user: dict = Depends(_current_user_required),
 ) -> ApiEnvelope:
     return ApiEnvelope(data=auth_store.list_paper_runs(current_user["id"], limit=limit))
 
 
 @app.get("/api/paper/runs/{run_id}", response_model=ApiEnvelope)
-def paper_run_detail(run_id: int, current_user: dict = Depends(_current_user)) -> ApiEnvelope:
+def paper_run_detail(run_id: int, current_user: dict = Depends(_current_user_required)) -> ApiEnvelope:
     run = auth_store.get_paper_run(current_user["id"], run_id)
     if not run:
         raise HTTPException(status_code=404, detail="Paper run not found")
@@ -581,9 +639,11 @@ def _saved_strategy_metadata(saved: dict) -> dict:
 def _resolve_requested_strategy(
     strategy_id: str,
     custom_strategy: dict | None,
-    current_user: dict,
+    current_user: dict | None,
 ) -> tuple[str, dict | None, dict]:
     if strategy_id.startswith("user_strategy_"):
+        if current_user is None:
+            raise HTTPException(status_code=401, detail="Sign in before using a saved strategy.")
         try:
             saved_strategy_id = int(strategy_id.removeprefix("user_strategy_"))
         except ValueError as exc:

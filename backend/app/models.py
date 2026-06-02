@@ -27,6 +27,7 @@ class SymbolRequest(BaseModel):
 
 class LoginRequest(BaseModel):
     username: str
+    password: str
 
 
 class CustomStrategyRequest(BaseModel):

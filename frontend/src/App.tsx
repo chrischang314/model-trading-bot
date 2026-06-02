@@ -51,12 +51,13 @@ import {
   fetchTimeseries,
   ingest,
   login,
+  logout as apiLogout,
   refreshSp500Universe,
+  register as registerUser,
   resetModelAccount,
   runBacktest,
   runPaper,
-  saveUserStrategy,
-  setApiUser
+  saveUserStrategy
 } from "./api";
 import type {
   BacktestComparison,
@@ -79,6 +80,7 @@ import type {
 const DEFAULT_SYMBOLS = ["AAPL", "AMZN", "META", "NFLX", "GOOGL"];
 const DEFAULT_STRATEGY_ID = "multi_factor_scorecard";
 const CUSTOM_STRATEGY_ID = "custom_scorecard";
+const USER_DISPLAY_STORAGE_KEY = "modelTradingBotUserDisplay";
 const DEFAULT_CUSTOM_STRATEGY: CustomStrategyConfig = {
   name: "Custom scorecard",
   min_signal_score: 5,
@@ -253,6 +255,7 @@ export function App() {
   const [universe, setUniverse] = useState<UniverseResponse | null>(null);
   const [newSymbol, setNewSymbol] = useState("");
   const [loginName, setLoginName] = useState("");
+  const [loginPassword, setLoginPassword] = useState("");
   const [signalFilter, setSignalFilter] = useState("");
   const [appLoading, setAppLoading] = useState(true);
   const [authLoading, setAuthLoading] = useState(false);
@@ -283,14 +286,20 @@ export function App() {
     return latestSignals.filter((row) => row.sym.includes(needle) || String(row.signal_reason ?? "").toUpperCase().includes(needle));
   }, [latestSignals, signalFilter]);
 
-  async function loadApp(symbol = selectedSymbol) {
+  function rememberUserDisplay(user: LocalUser) {
+    window.localStorage.setItem(USER_DISPLAY_STORAGE_KEY, JSON.stringify({ username: user.username }));
+    window.localStorage.removeItem("modelTradingBotUser");
+    window.localStorage.removeItem("sharedLocalUser");
+  }
+
+  async function loadApp(symbol = selectedSymbol, strategyId = selectedStrategyId, customStrategyConfig = selectedCustomStrategy) {
     setAppLoading(true);
     setError(null);
     try {
       const [rows, signalRows, strategyInfo, strategyRows, catalogRows, universeRows, diagnosticsRows, portfolioState, runRows] = await Promise.all([
-        fetchOverview(selectedStrategyId, selectedCustomStrategy),
-        fetchLatestSignals(selectedStrategyId, selectedCustomStrategy),
-        fetchStrategy(selectedStrategyId, selectedCustomStrategy),
+        fetchOverview(strategyId, customStrategyConfig),
+        fetchLatestSignals(strategyId, customStrategyConfig),
+        fetchStrategy(strategyId, customStrategyConfig),
         fetchStrategies(),
         fetchSignalCatalog(),
         fetchSp500Universe(false).catch(() => null),
@@ -316,7 +325,7 @@ export function App() {
       }
       const active = rows.some((row) => row.sym === symbol) ? symbol : rows[0]?.sym ?? DEFAULT_SYMBOLS[0];
       setSelectedSymbol(active);
-      await loadSymbol(active, rows, false, selectedStrategyId, selectedCustomStrategy);
+      await loadSymbol(active, rows, false, strategyId, customStrategyConfig);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Initial load failed");
     } finally {
@@ -538,40 +547,61 @@ export function App() {
     await changeStrategy(CUSTOM_STRATEGY_ID, customStrategy);
   }
 
-  async function handleLogin(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
+  async function authenticate(mode: "login" | "register") {
     const username = loginName.trim();
     if (!username) {
       setError("Enter a local username.");
       return;
     }
+    if (!loginPassword) {
+      setError("Enter a password.");
+      return;
+    }
     setAuthLoading(true);
     setError(null);
     try {
-      const state = await login(username);
+      const state = mode === "register" ? await registerUser(username, loginPassword) : await login(username, loginPassword);
       setCurrentUser(state.user);
       setLoginName(state.user.username);
-      window.localStorage.setItem("modelTradingBotUser", JSON.stringify(state.user));
-      window.localStorage.setItem("sharedLocalUser", JSON.stringify(state.user));
+      setLoginPassword("");
+      rememberUserDisplay(state.user);
       if (state.paper_portfolio?.snapshot) {
         setPaper(state.paper_portfolio.snapshot);
       }
       await loadApp(selectedSymbol);
-      setStatus(`Signed in as ${state.user.username}.`);
+      setStatus(`${mode === "register" ? "Registered" : "Signed in"} as ${state.user.username}.`);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Login failed");
+      setError(err instanceof Error ? err.message : mode === "register" ? "Registration failed" : "Login failed");
     } finally {
       setAuthLoading(false);
     }
   }
 
-  function logout() {
+  async function handleLogin(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    await authenticate("login");
+  }
+
+  async function handleRegister() {
+    await authenticate("register");
+  }
+
+  async function logout() {
+    try {
+      await apiLogout();
+    } catch {
+      // Local UI state still clears if the server-side session is already gone.
+    }
     setCurrentUser(null);
-    setApiUser(null);
+    setPaper(null);
+    setPaperRuns([]);
+    setSelectedPaperRun(null);
+    setSelectedStrategyId(DEFAULT_STRATEGY_ID);
+    window.localStorage.removeItem(USER_DISPLAY_STORAGE_KEY);
     window.localStorage.removeItem("modelTradingBotUser");
     window.localStorage.removeItem("sharedLocalUser");
-    setStatus("Signed out. Using demo defaults until you sign in again.");
-    loadApp(selectedSymbol);
+    setStatus("Signed out.");
+    await loadApp(selectedSymbol, DEFAULT_STRATEGY_ID, DEFAULT_CUSTOM_STRATEGY);
   }
 
   async function saveCurrentStrategy() {
@@ -615,30 +645,29 @@ export function App() {
   }
 
   useEffect(() => {
-    const stored = window.localStorage.getItem("modelTradingBotUser") || window.localStorage.getItem("sharedLocalUser");
+    window.localStorage.removeItem("modelTradingBotUser");
+    window.localStorage.removeItem("sharedLocalUser");
+    const stored = window.localStorage.getItem(USER_DISPLAY_STORAGE_KEY);
     if (stored) {
       try {
-        const user = JSON.parse(stored) as LocalUser;
-        setCurrentUser(user);
-        setLoginName(user.username);
-        setApiUser(user.id);
-        fetchUserState()
-          .then((state) => {
-            setCurrentUser(state.user);
-            if (state.paper_portfolio?.snapshot) {
-              setPaper(state.paper_portfolio.snapshot);
-            }
-          })
-          .catch(() => {
-            window.localStorage.removeItem("modelTradingBotUser");
-            window.localStorage.removeItem("sharedLocalUser");
-            setApiUser(null);
-          });
+        const display = JSON.parse(stored) as { username?: string };
+        setLoginName(display.username ?? "");
       } catch {
-        window.localStorage.removeItem("modelTradingBotUser");
-        window.localStorage.removeItem("sharedLocalUser");
+        window.localStorage.removeItem(USER_DISPLAY_STORAGE_KEY);
       }
     }
+    fetchUserState()
+      .then((state) => {
+        setCurrentUser(state.user);
+        setLoginName(state.user.username);
+        rememberUserDisplay(state.user);
+        if (state.paper_portfolio?.snapshot) {
+          setPaper(state.paper_portfolio.snapshot);
+        }
+      })
+      .catch(() => {
+        setCurrentUser(null);
+      });
     loadApp(DEFAULT_SYMBOLS[0]);
   }, []);
 
@@ -658,7 +687,10 @@ export function App() {
             currentUser={currentUser}
             loginName={loginName}
             setLoginName={setLoginName}
+            loginPassword={loginPassword}
+            setLoginPassword={setLoginPassword}
             handleLogin={handleLogin}
+            handleRegister={handleRegister}
             logout={logout}
             authLoading={authLoading}
           />
@@ -807,14 +839,20 @@ function AuthControl({
   currentUser,
   loginName,
   setLoginName,
+  loginPassword,
+  setLoginPassword,
   handleLogin,
+  handleRegister,
   logout,
   authLoading
 }: {
   currentUser: LocalUser | null;
   loginName: string;
   setLoginName: (value: string) => void;
+  loginPassword: string;
+  setLoginPassword: (value: string) => void;
   handleLogin: (event: FormEvent<HTMLFormElement>) => void;
+  handleRegister: () => void;
   logout: () => void;
   authLoading: boolean;
 }) {
@@ -838,9 +876,21 @@ function AuthControl({
         placeholder="Username"
         disabled={authLoading}
       />
-      <button className="commandButton compact" type="submit" disabled={authLoading || !loginName.trim()}>
+      <input
+        aria-label="Password"
+        type="password"
+        value={loginPassword}
+        onChange={(event) => setLoginPassword(event.target.value)}
+        placeholder="Password"
+        disabled={authLoading}
+      />
+      <button className="commandButton compact" type="submit" disabled={authLoading || !loginName.trim() || !loginPassword}>
         <UserRound size={17} />
         {authLoading ? "Signing in" : "Login"}
+      </button>
+      <button className="commandButton compact secondary" type="button" onClick={handleRegister} disabled={authLoading || !loginName.trim() || !loginPassword}>
+        <Plus size={17} />
+        Register
       </button>
     </form>
   );

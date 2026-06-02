@@ -16,41 +16,51 @@ import type {
 } from "./types";
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL ?? "/api";
-let activeUserId: number | null = null;
-
-export function setApiUser(userId: number | null) {
-  activeUserId = userId;
-}
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const headers = new Headers(init?.headers);
   headers.set("Content-Type", "application/json");
-  if (activeUserId != null) {
-    headers.set("X-User-Id", String(activeUserId));
-  }
   const response = await fetch(`${API_BASE}${path}`, {
     ...init,
-    headers
+    headers,
+    credentials: "include"
   });
   if (!response.ok) {
-    const detail = await response.text();
+    let detail = response.statusText;
+    try {
+      const payload = await response.json();
+      detail = typeof payload.detail === "string" ? payload.detail : JSON.stringify(payload);
+    } catch {
+      detail = await response.text();
+    }
     throw new Error(detail || response.statusText);
   }
   return response.json();
 }
 
-export async function login(username: string): Promise<UserState> {
+export async function register(username: string, password: string): Promise<UserState> {
+  const envelope = await request<{ data: UserState }>("/auth/register", {
+    method: "POST",
+    body: JSON.stringify({ username, password })
+  });
+  return envelope.data;
+}
+
+export async function login(username: string, password: string): Promise<UserState> {
   const envelope = await request<{ data: UserState }>("/auth/login", {
     method: "POST",
-    body: JSON.stringify({ username })
+    body: JSON.stringify({ username, password })
   });
-  setApiUser(envelope.data.user.id);
   return envelope.data;
 }
 
 export async function fetchUserState(): Promise<UserState> {
-  const envelope = await request<{ data: UserState }>("/user/state");
+  const envelope = await request<{ data: UserState }>("/auth/me");
   return envelope.data;
+}
+
+export async function logout(): Promise<void> {
+  await request<{ data: { ok: boolean } }>("/auth/logout", { method: "POST" });
 }
 
 export async function fetchOverview(strategyId?: string, customStrategy?: CustomStrategyConfig): Promise<OverviewRow[]> {

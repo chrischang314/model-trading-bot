@@ -4,7 +4,7 @@ import pandas as pd
 from fastapi.testclient import TestClient
 
 import app.main as main_module
-from app.services.auth import SharedAuthStore
+from app.services.auth import SESSION_COOKIE_NAME, SharedAuthStore
 from app.services.signals import calculate_signals
 
 
@@ -34,32 +34,34 @@ class PaperFakeStorage:
 def test_paper_run_api_lists_details_and_scopes_users(monkeypatch, tmp_path) -> None:
     store = SharedAuthStore(tmp_path / "auth.db")
     store.init()
-    chris = store.get_or_create_user("Chris")
-    alex = store.get_or_create_user("Alex")
+    chris = store.register_user("Chris", "correct-horse")
+    alex = store.register_user("Alex", "correct-horse")
     monkeypatch.setattr(main_module, "auth_store", store)
     monkeypatch.setattr(main_module, "storage", PaperFakeStorage())
-    client = TestClient(main_module.app)
-    chris_headers = {"X-User-Id": str(chris["id"])}
-    alex_headers = {"X-User-Id": str(alex["id"])}
+    chris_client = TestClient(main_module.app)
+    chris_client.cookies.set(SESSION_COOKIE_NAME, store.create_session(chris["id"]))
+    alex_client = TestClient(main_module.app)
+    alex_client.cookies.set(SESSION_COOKIE_NAME, store.create_session(alex["id"]))
+    anonymous_client = TestClient(main_module.app)
 
-    first = client.post(
+    assert anonymous_client.get("/api/paper/runs").status_code == 401
+
+    first = chris_client.post(
         "/api/paper/run",
-        headers=chris_headers,
         json={"symbols": ["AAPL"], "cash": 50_000, "strategy_id": "multi_factor_scorecard"},
     )
-    second = client.post(
+    second = chris_client.post(
         "/api/paper/run",
-        headers=chris_headers,
         json={"symbols": ["AAPL", "MSFT"], "cash": 75_000, "strategy_id": "trend_breakout"},
     )
 
     assert first.status_code == 200
     assert second.status_code == 200
-    portfolio = client.get("/api/paper/portfolio", headers=chris_headers)
+    portfolio = chris_client.get("/api/paper/portfolio")
     assert portfolio.status_code == 200
     assert portfolio.json()["data"]["snapshot"] == second.json()["data"]
 
-    runs = client.get("/api/paper/runs", headers=chris_headers)
+    runs = chris_client.get("/api/paper/runs")
     assert runs.status_code == 200
     run_rows = runs.json()["data"]
     assert len(run_rows) == 2
@@ -68,16 +70,16 @@ def test_paper_run_api_lists_details_and_scopes_users(monkeypatch, tmp_path) -> 
     assert run_rows[0]["resulting_equity"] > 0
     assert run_rows[0]["order_count"] == 2
 
-    detail = client.get(f"/api/paper/runs/{run_rows[0]['id']}", headers=chris_headers)
+    detail = chris_client.get(f"/api/paper/runs/{run_rows[0]['id']}")
     assert detail.status_code == 200
     assert detail.json()["data"]["snapshot"] == second.json()["data"]
     assert detail.json()["data"]["orders"] == second.json()["data"]["orders"]
 
-    assert client.get(f"/api/paper/runs/{run_rows[0]['id']}", headers=alex_headers).status_code == 404
-    assert client.get("/api/paper/runs/999999", headers=chris_headers).status_code == 404
+    assert alex_client.get(f"/api/paper/runs/{run_rows[0]['id']}").status_code == 404
+    assert chris_client.get("/api/paper/runs/999999").status_code == 404
 
-    reset = client.post("/api/user/account/reset", headers=chris_headers)
+    reset = chris_client.post("/api/user/account/reset")
 
     assert reset.status_code == 200
     assert reset.json()["data"]["paper_portfolio"] is None
-    assert client.get("/api/paper/runs", headers=chris_headers).json()["data"] == []
+    assert chris_client.get("/api/paper/runs").json()["data"] == []

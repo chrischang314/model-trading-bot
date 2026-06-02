@@ -62,6 +62,9 @@ class EmptySignalStorage:
 
 
 class CompareFakeAuthStore:
+    def get_user_by_session_token(self, token: str | None) -> dict | None:
+        return None
+
     def get_or_create_user(self, username: str) -> dict:
         return {
             "id": 1,

@@ -1,14 +1,39 @@
 from __future__ import annotations
 
 import json
+import base64
+import hashlib
+import hmac
 import sqlite3
-from datetime import datetime, timezone
+import secrets
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
 
+PASSWORD_ITERATIONS = 200_000
+SESSION_COOKIE_NAME = "projects_lan_session"
+SESSION_TTL_DAYS = 30
+
+
+class UserAlreadyExistsError(ValueError):
+    """Raised when registering a username that already has a password."""
+
+
+class InvalidCredentialsError(ValueError):
+    """Raised when username/password authentication fails."""
+
+
 def utcnow() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+def _utcnow() -> datetime:
+    return datetime.now(timezone.utc)
+
+
+def _token_hash(token: str) -> str:
+    return hashlib.sha256(token.encode("utf-8")).hexdigest()
 
 
 def normalize_username(username: str) -> tuple[str, str]:
@@ -16,6 +41,25 @@ def normalize_username(username: str) -> tuple[str, str]:
     if not clean:
         raise ValueError("Username cannot be empty")
     return clean[:80], clean.casefold()
+
+
+def normalize_password(password: str) -> str:
+    if not password:
+        raise ValueError("Password cannot be empty")
+    if len(password) < 8:
+        raise ValueError("Password must be at least 8 characters")
+    if len(password) > 1024:
+        raise ValueError("Password is too long")
+    return password
+
+
+def _new_salt() -> str:
+    return base64.b64encode(secrets.token_bytes(16)).decode("ascii")
+
+
+def _hash_password(password: str, salt: bytes) -> str:
+    digest = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt, PASSWORD_ITERATIONS)
+    return base64.b64encode(digest).decode("ascii")
 
 
 class SharedAuthStore:
@@ -37,8 +81,20 @@ class SharedAuthStore:
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     username TEXT NOT NULL,
                     username_key TEXT NOT NULL UNIQUE,
+                    password_hash TEXT,
+                    password_salt TEXT,
                     created_at TEXT NOT NULL,
                     updated_at TEXT NOT NULL
+                );
+
+                CREATE TABLE IF NOT EXISTS auth_sessions (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    user_id INTEGER NOT NULL,
+                    token_hash TEXT NOT NULL UNIQUE,
+                    created_at TEXT NOT NULL,
+                    expires_at TEXT NOT NULL,
+                    revoked_at TEXT,
+                    FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
                 );
 
                 CREATE TABLE IF NOT EXISTS model_trading_bot_profiles (
@@ -89,10 +145,119 @@ class SharedAuthStore:
                     ON model_trading_bot_paper_runs(user_id, created_at DESC, id DESC);
                 """
             )
+            self._ensure_user_columns(conn)
+
+    def register_user(self, username: str, password: str, *, allow_legacy_claim: bool = False) -> dict[str, Any]:
+        clean, key = normalize_username(username)
+        password = normalize_password(password)
+        now = utcnow()
+        salt = _new_salt()
+        password_hash = _hash_password(password, base64.b64decode(salt.encode("ascii")))
+        self.init()
+        with self._connect() as conn:
+            row = conn.execute("SELECT * FROM users WHERE username_key = ?", (key,)).fetchone()
+            if row is None:
+                cursor = conn.execute(
+                    """
+                    INSERT INTO users (
+                        username, username_key, password_hash, password_salt, created_at, updated_at
+                    )
+                    VALUES (?, ?, ?, ?, ?, ?)
+                    """,
+                    (clean, key, password_hash, salt, now, now),
+                )
+                row = conn.execute("SELECT * FROM users WHERE id = ?", (cursor.lastrowid,)).fetchone()
+            elif row["password_hash"] is None or row["password_salt"] is None:
+                if not allow_legacy_claim:
+                    raise UserAlreadyExistsError(
+                        "That username already exists. Ask an admin to migrate the legacy account before registering."
+                    )
+                conn.execute(
+                    """
+                    UPDATE users
+                    SET username = ?, password_hash = ?, password_salt = ?, updated_at = ?
+                    WHERE id = ?
+                    """,
+                    (clean, password_hash, salt, now, row["id"]),
+                )
+                row = conn.execute("SELECT * FROM users WHERE id = ?", (row["id"],)).fetchone()
+            else:
+                raise UserAlreadyExistsError("That username is already registered")
+        assert row is not None
+        user = self._user(row)
+        self.ensure_model_profile(user["id"])
+        return user
+
+    def authenticate_user(self, username: str, password: str) -> dict[str, Any]:
+        _, key = normalize_username(username)
+        password = normalize_password(password)
+        self.init()
+        with self._connect() as conn:
+            row = conn.execute("SELECT * FROM users WHERE username_key = ?", (key,)).fetchone()
+        if row is None or row["password_hash"] is None or row["password_salt"] is None:
+            raise InvalidCredentialsError("Invalid username or password")
+        salt = base64.b64decode(str(row["password_salt"]).encode("ascii"))
+        candidate = _hash_password(password, salt)
+        if not hmac.compare_digest(candidate, str(row["password_hash"])):
+            raise InvalidCredentialsError("Invalid username or password")
+        user = self._user(row)
+        self.ensure_model_profile(user["id"])
+        return user
+
+    def create_session(self, user_id: int, ttl_days: int = SESSION_TTL_DAYS) -> str:
+        if self.get_user(user_id) is None:
+            raise InvalidCredentialsError("User not found")
+        self.init()
+        token = secrets.token_urlsafe(32)
+        created = _utcnow()
+        expires = created + timedelta(days=ttl_days)
+        with self._connect() as conn:
+            conn.execute(
+                """
+                INSERT INTO auth_sessions (user_id, token_hash, created_at, expires_at)
+                VALUES (?, ?, ?, ?)
+                """,
+                (user_id, _token_hash(token), created.isoformat(), expires.isoformat()),
+            )
+        return token
+
+    def get_user_by_session_token(self, token: str | None) -> dict[str, Any] | None:
+        if not token:
+            return None
+        self.init()
+        now = utcnow()
+        with self._connect() as conn:
+            row = conn.execute(
+                """
+                SELECT users.*
+                FROM auth_sessions
+                JOIN users ON users.id = auth_sessions.user_id
+                WHERE auth_sessions.token_hash = ?
+                  AND auth_sessions.revoked_at IS NULL
+                  AND auth_sessions.expires_at > ?
+                """,
+                (_token_hash(token), now),
+            ).fetchone()
+        if row is None:
+            return None
+        user = self._user(row)
+        self.ensure_model_profile(user["id"])
+        return user
+
+    def revoke_session(self, token: str | None) -> None:
+        if not token:
+            return
+        self.init()
+        with self._connect() as conn:
+            conn.execute(
+                "UPDATE auth_sessions SET revoked_at = ? WHERE token_hash = ?",
+                (utcnow(), _token_hash(token)),
+            )
 
     def get_or_create_user(self, username: str) -> dict[str, Any]:
         clean, key = normalize_username(username)
         now = utcnow()
+        self.init()
         with self._connect() as conn:
             row = conn.execute("SELECT * FROM users WHERE username_key = ?", (key,)).fetchone()
             if row is None:
@@ -110,6 +275,7 @@ class SharedAuthStore:
         return user
 
     def get_user(self, user_id: int) -> dict[str, Any] | None:
+        self.init()
         with self._connect() as conn:
             row = conn.execute("SELECT * FROM users WHERE id = ?", (user_id,)).fetchone()
         return self._user(row) if row else None
@@ -326,6 +492,14 @@ class SharedAuthStore:
         conn = sqlite3.connect(self.db_path)
         conn.row_factory = sqlite3.Row
         return conn
+
+    @staticmethod
+    def _ensure_user_columns(conn: sqlite3.Connection) -> None:
+        columns = {row[1] for row in conn.execute("PRAGMA table_info(users)").fetchall()}
+        if "password_hash" not in columns:
+            conn.execute("ALTER TABLE users ADD COLUMN password_hash TEXT")
+        if "password_salt" not in columns:
+            conn.execute("ALTER TABLE users ADD COLUMN password_salt TEXT")
 
     @staticmethod
     def _user(row: sqlite3.Row) -> dict[str, Any]:
