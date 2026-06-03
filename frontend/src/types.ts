@@ -151,6 +151,8 @@ export type BacktestComparison = {
 };
 
 export type PaperSnapshot = {
+  run_id?: number;
+  run_at?: string;
   cash: number;
   equity: number;
   positions: Array<{ sym: string; quantity: number; last_price: number; market_value: number }>;
@@ -168,13 +170,12 @@ export type PaperPortfolio = {
 export type PaperRunSummary = {
   id: number;
   user_id: number;
-  created_at: string;
-  requested_symbols: string[];
-  cash: number;
+  run_at: string;
+  symbols: string[];
   strategy_id: string;
-  custom_strategy: CustomStrategyConfig | null;
-  resulting_cash: number;
-  resulting_equity: number;
+  requested_cash: number;
+  cash: number;
+  equity: number;
   order_count: number;
   position_count: number;
   warnings: string[];
@@ -182,6 +183,7 @@ export type PaperRunSummary = {
 };
 
 export type PaperRunDetail = PaperRunSummary & {
+  custom_strategy: CustomStrategyConfig | null;
   snapshot: PaperSnapshot;
   positions: PaperSnapshot["positions"];
   orders: PaperSnapshot["orders"];

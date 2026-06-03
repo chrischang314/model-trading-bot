@@ -81,8 +81,9 @@ def test_shared_auth_store_keeps_user_scoped_paper_run_history(tmp_path) -> None
     runs = store.list_paper_runs(chris["id"])
 
     assert [run["id"] for run in runs] == [second["id"], first["id"]]
-    assert runs[0]["requested_symbols"] == ["MSFT"]
-    assert runs[0]["resulting_equity"] == 101500
+    assert runs[0]["symbols"] == ["MSFT"]
+    assert runs[0]["requested_cash"] == 100000
+    assert runs[0]["equity"] == 101500
     assert runs[0]["order_count"] == 1
     assert store.get_paper_run(chris["id"], first["id"])["snapshot"] == first_snapshot
     assert store.get_paper_run(alex["id"], first["id"]) is None

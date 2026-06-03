@@ -502,7 +502,7 @@ export function App() {
 
   function replayPaperRun(run: PaperRunDetail) {
     setPaper(run.snapshot);
-    setStatus(`Loaded paper run from ${shortDate(run.created_at)} ${shortTime(run.created_at)}.`);
+    setStatus(`Loaded paper run from ${shortDate(run.run_at)} ${shortTime(run.run_at)}.`);
   }
 
   async function runCurrentPaper() {
@@ -1801,10 +1801,10 @@ function PaperRunJournalPanel({
           <tbody>
             {runs.slice(0, 12).map((run) => (
               <tr key={run.id} className={selectedRun?.id === run.id ? "selectedRunRow" : ""}>
-                <td>{`${shortDate(run.created_at)} ${shortTime(run.created_at)}`}</td>
+                <td>{`${shortDate(run.run_at)} ${shortTime(run.run_at)}`}</td>
                 <td>{formatStrategyName(run.strategy_id)}</td>
-                <td>{run.requested_symbols.join(", ")}</td>
-                <td>{money.format(run.resulting_equity)}</td>
+                <td>{run.symbols.join(", ")}</td>
+                <td>{money.format(run.equity)}</td>
                 <td>{run.order_count}</td>
                 <td>
                   <button className="iconTextButton" type="button" onClick={() => openPaperRun(run.id)} disabled={detailLoading}>
@@ -1832,7 +1832,7 @@ function PaperRunJournalPanel({
           <div className="paperRunActions">
             <div>
               <strong>{formatStrategyName(selectedRun.strategy_id)}</strong>
-              <span>{selectedRun.requested_symbols.join(", ")}</span>
+              <span>{selectedRun.symbols.join(", ")}</span>
             </div>
             <button className="commandButton compact" type="button" onClick={() => replayPaperRun(selectedRun)}>
               <History size={17} />
@@ -1840,9 +1840,9 @@ function PaperRunJournalPanel({
             </button>
           </div>
           <div className="metricStrip slim">
-            <SmallMetric label="Requested" value={money.format(selectedRun.cash)} />
-            <SmallMetric label="Equity" value={money.format(selectedRun.resulting_equity)} />
-            <SmallMetric label="Cash" value={money.format(selectedRun.resulting_cash)} />
+            <SmallMetric label="Requested" value={money.format(selectedRun.requested_cash)} />
+            <SmallMetric label="Equity" value={money.format(selectedRun.equity)} />
+            <SmallMetric label="Cash" value={money.format(selectedRun.cash)} />
             <SmallMetric label="Positions" value={String(selectedRun.position_count)} />
           </div>
           <div className="tableWrap paperOrderTable">

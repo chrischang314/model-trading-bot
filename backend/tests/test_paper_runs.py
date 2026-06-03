@@ -57,22 +57,28 @@ def test_paper_run_api_lists_details_and_scopes_users(monkeypatch, tmp_path) -> 
 
     assert first.status_code == 200
     assert second.status_code == 200
+    first_id = first.json()["data"]["run_id"]
+    second_id = second.json()["data"]["run_id"]
     portfolio = chris_client.get("/api/paper/portfolio")
     assert portfolio.status_code == 200
-    assert portfolio.json()["data"]["snapshot"] == second.json()["data"]
+    assert portfolio.json()["data"]["snapshot"]["orders"] == second.json()["data"]["orders"]
 
     runs = chris_client.get("/api/paper/runs")
     assert runs.status_code == 200
     run_rows = runs.json()["data"]
     assert len(run_rows) == 2
-    assert run_rows[0]["requested_symbols"] == ["AAPL", "MSFT"]
+    assert [item["id"] for item in run_rows] == [second_id, first_id]
+    assert run_rows[0]["symbols"] == ["AAPL", "MSFT"]
     assert run_rows[0]["strategy_id"] == "trend_breakout"
-    assert run_rows[0]["resulting_equity"] > 0
+    assert run_rows[0]["requested_cash"] == 75_000
+    assert run_rows[0]["equity"] > 0
     assert run_rows[0]["order_count"] == 2
+    assert "snapshot" not in run_rows[0]
 
     detail = chris_client.get(f"/api/paper/runs/{run_rows[0]['id']}")
     assert detail.status_code == 200
-    assert detail.json()["data"]["snapshot"] == second.json()["data"]
+    assert detail.json()["data"]["snapshot"]["orders"] == second.json()["data"]["orders"]
+    assert detail.json()["data"]["symbols"] == ["AAPL", "MSFT"]
     assert detail.json()["data"]["orders"] == second.json()["data"]["orders"]
 
     assert alex_client.get(f"/api/paper/runs/{run_rows[0]['id']}").status_code == 404

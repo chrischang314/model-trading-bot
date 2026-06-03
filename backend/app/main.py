@@ -496,8 +496,8 @@ def paper(request: PaperRequest, current_user: dict = Depends(_current_user_requ
     signals = _signals_or_bootstrap(symbols, strategy_id, custom_strategy)
     snapshot = run_paper_snapshot(signals, request.cash)
     auth_store.save_paper_portfolio(current_user["id"], snapshot, request.cash, request.strategy_id, custom_strategy)
-    auth_store.save_paper_run(current_user["id"], symbols, snapshot, request.cash, request.strategy_id, custom_strategy)
-    return ApiEnvelope(data=snapshot)
+    run = auth_store.save_paper_run(current_user["id"], symbols, snapshot, request.cash, request.strategy_id, custom_strategy)
+    return ApiEnvelope(data={**snapshot, "run_id": run["id"], "run_at": run["run_at"]})
 
 
 @app.get("/api/paper/portfolio", response_model=ApiEnvelope)
@@ -507,7 +507,7 @@ def paper_portfolio(current_user: dict = Depends(_current_user_required)) -> Api
 
 @app.get("/api/paper/runs", response_model=ApiEnvelope)
 def paper_runs(
-    limit: int = Query(default=25, ge=1, le=100),
+    limit: int = Query(default=20, ge=1, le=50),
     current_user: dict = Depends(_current_user_required),
 ) -> ApiEnvelope:
     return ApiEnvelope(data=auth_store.list_paper_runs(current_user["id"], limit=limit))
