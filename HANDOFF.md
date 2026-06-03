@@ -1,37 +1,42 @@
 # Handoff
 
-## Current Branch
+## Current Candidate
 
-- Worktree: `C:\Users\chris\Projects\model-trading-bot-sso-contract`
-- Branch: `codex/projects-lan-sso-model-trading-bot`
-- Task: Projects LAN shared SSO contract for `model-trading-bot`.
-
-## What Changed
-
-- Backend auth now uses `SHARED_AUTH_DB` for shared `users` and hashed `auth_sessions`.
+- Branch/worktree: cleanup branch from `origin/main` with the paper-run journal and ingest provenance C variants merged.
+- Auth: Projects LAN shared SSO contract for `model-trading-bot`.
+- Feature: Data Ingestion Provenance Center for the `model-trading-bot` Projects LAN ranked brief dated 2026-06-01.
+- Backend auth uses `SHARED_AUTH_DB` for shared `users` and hashed `auth_sessions`.
 - Register/login require username plus password and set the HttpOnly `projects_lan_session` cookie.
 - Logout revokes the session token and clears the cookie.
 - Account-scoped model-trading-bot endpoints resolve users from the session cookie, not `X-User-Id`, query params, or localStorage.
 - Public market-data and built-in strategy views can still load without a session; saved strategies, account reset, paper portfolio, and paper run journal require a signed-in session.
 - Frontend API calls include credentials and no longer send user ids. localStorage only keeps a display username hint.
-- Paper run and portfolio user scoping remains keyed by shared numeric `user_id`.
-
-## Configuration
-
-- `SHARED_AUTH_DB`: shared SQLite auth DB path.
-- `AUTH_COOKIE_DOMAIN`: optional cookie domain for LAN host sharing.
-- `AUTH_COOKIE_SECURE`: set `true` only when serving over HTTPS.
-- `AUTH_SESSION_TTL_DAYS`: session cookie/backend session lifetime, default `30`.
-- `AUTH_ALLOW_LEGACY_PASSWORD_CLAIM`: default `false`; set `true` only for a trusted migration window if existing passwordless rows must be claimed by registration.
-- `CORS_ORIGINS`: comma-separated frontend origins allowed to send credentialed requests during cross-origin dev.
+- Backend: ingestion now records a bounded local JSON journal at `LOCAL_DATA_DIR\ingest_runs.json`.
+- Backend: recorded attempts include trigger, requested symbols, period/start/end, provider mode, storage backend, source labels/counts, bars/signals written, returned bar count, date range, no-data symbols, duration, status, and short error summary.
+- Backend: `POST /api/ingest`, `POST /api/symbols`, startup bootstrap, broad auto-bootstrap, and symbol-specific auto-ingest attempts all record success, partial, or failure outcomes.
+- Backend: `GET /api/ingest/runs` returns recent newest-first ingest runs, and `GET /api/diagnostics` includes latest plus recent ingest summaries without forcing an internet refresh.
+- Frontend: the Home Operations panel shows ingest status and recent runs, with a retry button for failed or partial symbols through the existing ingest endpoint.
+- Docs: `README.md` and `PROJECT_HANDBOOK.md` describe the local non-sensitive ingest journal and retry behavior.
 
 ## Verification
 
-- Baseline before edits: from `backend/`, `..\.venv\Scripts\python.exe -m pytest` -> `17 passed, 3 warnings`.
-- After changes: from `backend/`, `..\.venv\Scripts\python.exe -m pytest` -> `20 passed, 3 warnings`.
-- After changes: from `frontend/`, with the portable CodexTools Node path prepended, `corepack pnpm run build` -> passes with the existing Vite chunk-size warning.
+- Baseline before edits: backend pytest passed with `17 passed, 2 warnings`; frontend TypeScript/Vite build passed with the existing chunk-size warning.
+- Backend after edits: from `backend/`, `C:\Users\chris\Projects\model-trading-bot\.venv\Scripts\python.exe -m pytest` passed with `21 passed, 2 warnings`.
+- Frontend after edits: from `frontend/`, local Codex Node ran TypeScript build and Vite production build successfully; Vite still reports the existing chunk-size warning.
+- Diff check: `git diff --check` passed.
+- API smoke: local FastAPI on `127.0.0.1:18300` returned ingest summaries through `/api/diagnostics` and `/api/ingest/runs`.
+- Browser smoke: local Vite on `127.0.0.1:18380` verified login, Operations ingest provenance, retry affordance, Stock, Signals, Backtesting, Paper Run Journal visibility, and no console errors. Smoke servers were stopped.
+
+## Deployment Status
+
+- Not deployed from this implementer branch.
+- No Kubernetes values, image tags, or container-orchestrator files were changed.
+- Judge should compare A/B/C candidates, choose one implementation, then build/push/deploy through `container-orchestrator` and verify `http://modeltradingbot.lan/`, `/api/diagnostics`, and `/api/ingest/runs`.
 
 ## Notes
 
 - Do not reintroduce `X-User-Id` or `user_id` query auth. They were the localStorage authority path this refactor removes.
 - If sibling apps need to share this exact SSO session, align them to the `projects_lan_session` cookie name and the same `auth_sessions` table.
+- Do not store API keys, raw provider responses, stack traces, browser state, or credentials in ingest-run records.
+- Partial status means the provider returned rows for at least one requested symbol but not all requested symbols.
+- Symbol-specific no-market-data behavior is preserved: no-data reads still return `404`; provider outages still return `502`.

@@ -50,10 +50,25 @@ class FakeUniverseService:
         }
 
 
+class FakeIngestRunStore:
+    def latest(self) -> dict:
+        return {
+            "id": "run-1",
+            "status": "success",
+            "trigger": "manual",
+            "requested_symbols": ["AAPL"],
+            "duration_ms": 12.5,
+        }
+
+    def list_runs(self, limit: int = 5) -> list[dict]:
+        return [self.latest()]
+
+
 def test_diagnostics_endpoint_reports_operational_snapshot(monkeypatch) -> None:
     monkeypatch.setattr(main_module, "storage", FakeStorage())
     monkeypatch.setattr(main_module, "auth_store", FakeAuthStore())
     monkeypatch.setattr(main_module, "universe_service", FakeUniverseService())
+    monkeypatch.setattr(main_module, "ingest_run_store", FakeIngestRunStore())
 
     response = TestClient(main_module.app).get("/api/diagnostics")
 
@@ -68,6 +83,8 @@ def test_diagnostics_endpoint_reports_operational_snapshot(monkeypatch) -> None:
     assert data["signals"]["age_days"] is not None
     assert data["signals"]["stale"] in {True, False}
     assert data["universe"]["count"] == 503
+    assert data["ingest"]["latest"]["status"] == "success"
+    assert data["ingest"]["recent"][0]["trigger"] == "manual"
 
 
 def test_storage_frame_diagnostics_marks_stale_market_data() -> None:

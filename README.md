@@ -106,6 +106,7 @@ The dashboard calls:
 - `POST /api/symbols` to add and ingest new tickers.
 - `GET /api/universe/sp500` and `POST /api/universe/sp500/refresh` to view or re-poll S&P 500 constituents.
 - `POST /api/ingest` to fetch bars, write bars/signals, and refresh the store.
+- `GET /api/ingest/runs` to review recent market-data ingest attempts, including status, requested symbols, provider/source outcome, rows written, no-data symbols, error summary, and duration.
 - `GET /api/strategies` and `GET /api/strategy` for algorithm metadata, strategy menu options, and score components.
 - `GET /api/signals/catalog` and `GET /api/signals/latest` for expandable signal descriptions and the latest full signal matrix.
 - `GET /api/explain/{symbol}` for the latest component-level explanation.
@@ -142,7 +143,9 @@ The signal set is influenced by classic technical-analysis and momentum literatu
 
 ## Operations Snapshot
 
-The Home page includes an Operations panel backed by `GET /api/diagnostics`. It shows whether local storage and shared login are healthy, whether stored market bars and calculated signals are fresh or stale, and whether the cached S&P 500 universe is available or stale. Bar and signal freshness uses the latest stored row date plus a three-day calendar tolerance so weekends do not immediately create noisy alerts. The diagnostics endpoint reads the existing universe cache status without forcing an internet refresh, so loading the dashboard stays fast even when Wikipedia or the network is unavailable.
+The Home page includes an Operations panel backed by `GET /api/diagnostics`. It shows whether local storage and shared login are healthy, whether stored market bars and calculated signals are fresh or stale, whether the cached S&P 500 universe is available or stale, and the latest local ingest-run history. Bar and signal freshness uses the latest stored row date plus a three-day calendar tolerance so weekends do not immediately create noisy alerts. The diagnostics endpoint reads the existing universe cache status and local ingest journal without forcing an internet refresh, so loading the dashboard stays fast even when Wikipedia or the network is unavailable.
+
+Ingest provenance is stored as a bounded local JSON journal at `LOCAL_DATA_DIR\ingest_runs.json`. It records explicit refreshes, ticker adds, startup bootstrap attempts, and auto-ingest attempts with compact non-sensitive summaries only: trigger, requested symbols, provider mode, stored source labels, row counts, no-data symbols, duration, and short error text. The Operations panel shows recent runs and offers a retry action for failed or partial symbols through the existing ingest endpoint.
 
 ## Kubernetes
 

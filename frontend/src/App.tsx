@@ -64,6 +64,7 @@ import type {
   BacktestResult,
   CustomStrategyConfig,
   DiagnosticsFrame,
+  IngestRun,
   OverviewRow,
   PaperSnapshot,
   PaperRunDetail,
@@ -382,15 +383,16 @@ export function App() {
     await loadSymbol(nextSymbol, rows, false, strategyId, custom);
   }
 
-  async function refreshData() {
+  async function refreshData(symbolOverride?: string[]) {
     setRefreshingData(true);
-    setStatus("Refreshing market data for watched symbols...");
+    const requestedSymbols = Array.isArray(symbolOverride) && symbolOverride.length ? symbolOverride : null;
+    setStatus(requestedSymbols ? `Retrying market data for ${requestedSymbols.join(", ")}...` : "Refreshing market data for watched symbols...");
     setError(null);
     try {
-      const activeSymbols = symbols.length ? symbols : DEFAULT_SYMBOLS;
+      const activeSymbols = requestedSymbols ?? (symbols.length ? symbols : DEFAULT_SYMBOLS);
       await ingest(activeSymbols);
       await reloadOverview(selectedSymbol);
-      setStatus("Market data refreshed.");
+      setStatus(requestedSymbols ? `Market data retry finished for ${activeSymbols.join(", ")}.` : "Market data refreshed.");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Refresh failed");
     } finally {
@@ -733,7 +735,7 @@ export function App() {
               {addingSymbol ? "Adding" : "Add"}
             </button>
           </form>
-          <button className="commandButton compact" type="button" onClick={refreshData} disabled={refreshingData} title="Refresh watched data">
+          <button className="commandButton compact" type="button" onClick={() => refreshData()} disabled={refreshingData} title="Refresh watched data">
             <RefreshCw size={17} className={refreshingData ? "spin" : ""} />
             {refreshingData ? "Refreshing" : "Refresh"}
           </button>
@@ -765,6 +767,8 @@ export function App() {
           strategy={strategy}
           backtest={backtest}
           paper={paper}
+          refreshingData={refreshingData}
+          retryIngestRun={(run) => refreshData(run.no_data_symbols.length ? run.no_data_symbols : run.requested_symbols)}
           chooseSymbol={(symbol) => {
             setPage("stock");
             chooseSymbol(symbol);
@@ -905,6 +909,8 @@ function HomePage({
   strategy,
   backtest,
   paper,
+  refreshingData,
+  retryIngestRun,
   chooseSymbol
 }: {
   appLoading: boolean;
@@ -915,6 +921,8 @@ function HomePage({
   strategy: StrategyInfo | null;
   backtest: BacktestResult | null;
   paper: PaperSnapshot | null;
+  refreshingData: boolean;
+  retryIngestRun: (run: IngestRun) => void;
   chooseSymbol: (symbol: string) => void;
 }) {
   const leaders = [...overview].sort((a, b) => (Number(b.signal_score) || 0) - (Number(a.signal_score) || 0)).slice(0, 6);
@@ -960,14 +968,24 @@ function HomePage({
             <h2>Operations</h2>
             <span>{diagnostics?.generated_at ? shortTime(diagnostics.generated_at) : "-"}</span>
           </div>
-          <DiagnosticsPanel diagnostics={diagnostics} universe={universe} />
+          <DiagnosticsPanel diagnostics={diagnostics} universe={universe} refreshingData={refreshingData} retryIngestRun={retryIngestRun} />
         </div>
       </section>
     </>
   );
 }
 
-function DiagnosticsPanel({ diagnostics, universe }: { diagnostics: SystemDiagnostics | null; universe: UniverseResponse | null }) {
+function DiagnosticsPanel({
+  diagnostics,
+  universe,
+  refreshingData,
+  retryIngestRun
+}: {
+  diagnostics: SystemDiagnostics | null;
+  universe: UniverseResponse | null;
+  refreshingData: boolean;
+  retryIngestRun: (run: IngestRun) => void;
+}) {
   const barDate = diagnostics?.bars.latest_date;
   const signalDate = diagnostics?.signals.latest_date;
   const missingBars = diagnostics?.bars.missing_symbols.length ?? 0;
@@ -975,6 +993,8 @@ function DiagnosticsPanel({ diagnostics, universe }: { diagnostics: SystemDiagno
   const universeCount = diagnostics?.universe.count ?? universe?.count ?? 0;
   const universeDate = diagnostics?.universe.as_of ?? universe?.as_of ?? null;
   const storageBackend = typeof diagnostics?.health.storage_backend === "string" ? diagnostics.health.storage_backend : "storage";
+  const latestIngest = diagnostics?.ingest.latest ?? null;
+  const recentIngest = diagnostics?.ingest.recent ?? [];
   return (
     <div className="diagnosticsPanel" data-testid="diagnostics-panel">
       <div className="diagnosticItem">
@@ -1012,6 +1032,35 @@ function DiagnosticsPanel({ diagnostics, universe }: { diagnostics: SystemDiagno
           <small>{universeCount ? `${compact.format(universeCount)} listings, ${shortDate(universeDate)}` : "cache missing"}</small>
         </div>
       </div>
+      <div className="diagnosticItem">
+        <span className={`statusDot ${ingestStatusTone(latestIngest)}`} />
+        <div>
+          <strong>Ingest Runs</strong>
+          <small>{latestIngest ? ingestRunSummary(latestIngest) : "No ingest attempts recorded yet."}</small>
+        </div>
+      </div>
+      {recentIngest.length ? (
+        <div className="ingestHistory">
+          {recentIngest.slice(0, 4).map((run) => {
+            const retrySymbols = run.no_data_symbols.length ? run.no_data_symbols : run.status === "success" ? [] : run.requested_symbols;
+            return (
+              <div className="ingestRunRow" key={run.id}>
+                <span className={`runStatus ${run.status}`}>{run.status}</span>
+                <div>
+                  <strong>{ingestTriggerLabel(run.trigger)}</strong>
+                  <small>{ingestRunDetail(run)}</small>
+                </div>
+                {retrySymbols.length ? (
+                  <button className="inlineRetry" type="button" onClick={() => retryIngestRun(run)} disabled={refreshingData} title={`Retry ${retrySymbols.join(", ")}`}>
+                    <RefreshCw size={13} className={refreshingData ? "spin" : ""} />
+                    Retry
+                  </button>
+                ) : null}
+              </div>
+            );
+          })}
+        </div>
+      ) : null}
       <div className="diagnosticFooter">
         <span>{diagnostics ? `${diagnostics.symbols.count} watched tickers` : "Diagnostics loading"}</span>
         <span>{diagnostics?.generated_at ? `checked ${shortTime(diagnostics.generated_at)}` : "-"}</span>
@@ -2473,6 +2522,43 @@ function buildSignalTrendData(series: SignalPoint[], selectedKeys: string[], sca
     }
     return row;
   });
+}
+
+function ingestStatusTone(run: IngestRun | null) {
+  if (!run) return "";
+  if (run.status === "success") return "ok";
+  if (run.status === "partial") return "warn";
+  return "bad";
+}
+
+function ingestRunSummary(run: IngestRun) {
+  const symbols = compactSymbols(run.requested_symbols);
+  const source = run.sources.length ? run.sources.join(", ") : run.provider_mode;
+  const issue = run.status === "failure" && run.error_summary ? `, ${run.error_summary}` : "";
+  const missing = run.no_data_symbols.length ? `, missing ${compactSymbols(run.no_data_symbols)}` : "";
+  return `${run.status} ${shortTime(run.created_at)}; ${symbols}; ${source}; ${run.duration_ms.toFixed(0)} ms${missing}${issue}`;
+}
+
+function ingestRunDetail(run: IngestRun) {
+  const dates = run.date_range.start && run.date_range.end ? `${shortDate(run.date_range.start)} to ${shortDate(run.date_range.end)}` : "no date range";
+  const rows = `${compact.format(run.bars_written)} bars, ${compact.format(run.signals_written)} signals`;
+  const missing = run.no_data_symbols.length ? `; no rows for ${compactSymbols(run.no_data_symbols)}` : "";
+  return `${shortTime(run.created_at)}; ${compactSymbols(run.requested_symbols)}; ${rows}; ${dates}${missing}`;
+}
+
+function ingestTriggerLabel(trigger: string) {
+  if (trigger === "manual") return "Manual refresh";
+  if (trigger === "symbol_add") return "Symbol add";
+  if (trigger === "auto_symbol") return "Auto symbol";
+  if (trigger === "auto_bootstrap") return "Auto bootstrap";
+  if (trigger === "startup") return "Startup";
+  return trigger.split("_").map(titleCase).join(" ");
+}
+
+function compactSymbols(symbols: string[]) {
+  if (!symbols.length) return "no symbols";
+  if (symbols.length <= 4) return symbols.join(", ");
+  return `${symbols.slice(0, 4).join(", ")} +${symbols.length - 4}`;
 }
 
 function numericSignal(value: SignalValue | undefined) {
