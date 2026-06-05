@@ -97,6 +97,27 @@ h2 {
   min-width: 0;
 }
 
+.authModeTabs {
+  display: inline-flex;
+  border: 1px solid #d6dae1;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.authModeTabs button {
+  min-height: 40px;
+  border: 0;
+  background: #ffffff;
+  color: #475569;
+  padding: 0 9px;
+  font-weight: 800;
+}
+
+.authModeTabs button.is-active {
+  background: #0f766e;
+  color: #ffffff;
+}
+
 .authForm input,
 .tickerForm input {
   width: 104px;
@@ -1460,6 +1481,14 @@ tbody tr:hover,
   .authChip {
     grid-column: 1 / -1;
     width: 100%;
+  }
+
+  .authModeTabs {
+    width: 100%;
+  }
+
+  .authModeTabs button {
+    flex: 1;
   }
 
   .authForm input {
