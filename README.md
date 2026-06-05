@@ -60,6 +60,11 @@ Register or sign in through `POST /api/auth/register` and `POST /api/auth/login`
 
 Public registration does not claim existing passwordless legacy rows by default. Use `AUTH_ALLOW_LEGACY_PASSWORD_CLAIM=true` only during a trusted migration window, or migrate legacy rows administratively.
 
+Startup performs additive SQLite migrations for model-trading-bot auth tables.
+Older shared databases that already have `model_trading_bot_paper_runs` are
+upgraded in place before the `run_at` index is created, so saved paper-run rows
+survive backend image updates.
+
 For cross-origin local frontend development, configure `CORS_ORIGINS` with the frontend origins that should be allowed to send credentials. Same-origin nginx deployments do not need a custom CORS setting.
 
 ## Quick Start

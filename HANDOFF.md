@@ -1,5 +1,14 @@
 # Handoff
 
+## Outage Repair - 2026-06-05
+
+- Fixed backend startup against legacy shared auth databases where
+  `model_trading_bot_paper_runs` existed without the newer `run_at` column.
+- `SharedAuthStore.init()` now adds missing paper-run columns before creating
+  the `run_at` index and copies legacy `created_at` values into `run_at`.
+- Do not repair this class of crash by deleting `/shared-auth/auth.db`; the
+  migration preserves saved users, strategies, and paper runs.
+
 ## Current Candidate
 
 - Branch/worktree: cleanup branch from `origin/main` with the paper-run journal and ingest provenance C variants merged.

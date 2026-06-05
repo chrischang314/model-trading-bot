@@ -140,12 +140,16 @@ class SharedAuthStore:
                     error_flags_json TEXT NOT NULL DEFAULT '{}',
                     snapshot_json TEXT NOT NULL
                 );
-
-                CREATE INDEX IF NOT EXISTS idx_model_trading_bot_paper_runs_user_at
-                    ON model_trading_bot_paper_runs(user_id, run_at DESC, id DESC);
                 """
             )
             self._ensure_user_columns(conn)
+            self._ensure_paper_run_columns(conn)
+            conn.execute(
+                """
+                CREATE INDEX IF NOT EXISTS idx_model_trading_bot_paper_runs_user_at
+                    ON model_trading_bot_paper_runs(user_id, run_at DESC, id DESC)
+                """
+            )
 
     def register_user(self, username: str, password: str, *, allow_legacy_claim: bool = False) -> dict[str, Any]:
         clean, key = normalize_username(username)
@@ -526,6 +530,36 @@ class SharedAuthStore:
             conn.execute("ALTER TABLE users ADD COLUMN password_hash TEXT")
         if "password_salt" not in columns:
             conn.execute("ALTER TABLE users ADD COLUMN password_salt TEXT")
+
+    @staticmethod
+    def _ensure_paper_run_columns(conn: sqlite3.Connection) -> None:
+        columns = {row[1] for row in conn.execute("PRAGMA table_info(model_trading_bot_paper_runs)").fetchall()}
+        required = {
+            "run_at": "TEXT NOT NULL DEFAULT ''",
+            "symbols_json": "TEXT NOT NULL DEFAULT '[]'",
+            "strategy_id": "TEXT NOT NULL DEFAULT 'multi_factor_scorecard'",
+            "custom_strategy_json": "TEXT",
+            "requested_cash": "REAL NOT NULL DEFAULT 100000",
+            "resulting_cash": "REAL NOT NULL DEFAULT 0",
+            "resulting_equity": "REAL NOT NULL DEFAULT 0",
+            "positions_json": "TEXT NOT NULL DEFAULT '[]'",
+            "orders_json": "TEXT NOT NULL DEFAULT '[]'",
+            "warnings_json": "TEXT NOT NULL DEFAULT '[]'",
+            "error_flags_json": "TEXT NOT NULL DEFAULT '{}'",
+            "snapshot_json": "TEXT NOT NULL DEFAULT '{}'",
+        }
+        for name, ddl in required.items():
+            if name not in columns:
+                conn.execute(f"ALTER TABLE model_trading_bot_paper_runs ADD COLUMN {name} {ddl}")
+                columns.add(name)
+        if "created_at" in columns:
+            conn.execute(
+                """
+                UPDATE model_trading_bot_paper_runs
+                SET run_at = created_at
+                WHERE run_at = ''
+                """
+            )
 
     @staticmethod
     def _user(row: sqlite3.Row) -> dict[str, Any]:

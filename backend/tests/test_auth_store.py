@@ -95,6 +95,57 @@ def test_shared_auth_store_keeps_user_scoped_paper_run_history(tmp_path) -> None
     assert store.list_paper_runs(chris["id"]) == []
 
 
+def test_shared_auth_store_migrates_legacy_paper_runs_table(tmp_path) -> None:
+    db_path = tmp_path / "auth.db"
+    now = datetime.now(UTC).isoformat()
+    with sqlite3.connect(db_path) as conn:
+        conn.execute(
+            """
+            CREATE TABLE users (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                username TEXT NOT NULL,
+                username_key TEXT NOT NULL UNIQUE,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            )
+            """
+        )
+        conn.execute(
+            "INSERT INTO users (username, username_key, created_at, updated_at) VALUES (?, ?, ?, ?)",
+            ("Chris Chang", "chris chang", now, now),
+        )
+        conn.execute(
+            """
+            CREATE TABLE model_trading_bot_paper_runs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL,
+                created_at TEXT NOT NULL,
+                snapshot_json TEXT NOT NULL
+            )
+            """
+        )
+        conn.execute(
+            """
+            INSERT INTO model_trading_bot_paper_runs (user_id, created_at, snapshot_json)
+            VALUES (?, ?, ?)
+            """,
+            (1, now, '{"cash": 100000, "equity": 100000, "positions": [], "orders": []}'),
+        )
+
+    store = SharedAuthStore(db_path)
+    store.init()
+
+    with sqlite3.connect(db_path) as conn:
+        columns = {row[1] for row in conn.execute("PRAGMA table_info(model_trading_bot_paper_runs)").fetchall()}
+
+    assert "run_at" in columns
+    assert "symbols_json" in columns
+    runs = store.list_paper_runs(1)
+    assert runs[0]["run_at"] == now
+    assert runs[0]["symbols"] == []
+    assert runs[0]["strategy_id"] == "multi_factor_scorecard"
+
+
 def test_register_rejects_legacy_username_only_user_by_default(tmp_path) -> None:
     db_path = tmp_path / "auth.db"
     now = datetime.now(UTC).isoformat()

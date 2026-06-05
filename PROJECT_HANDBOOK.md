@@ -31,6 +31,11 @@ Bars and signals are marked stale after more than three calendar days without a 
 
 The diagnostics endpoint must not trigger an S&P 500 internet refresh or a market-data refresh. Manual refresh still belongs to `POST /api/ingest`, `POST /api/universe/sp500/refresh`, or the dashboard buttons.
 
+The shared auth database is a long-lived LAN artifact. Startup migrations must
+be additive: if `model_trading_bot_paper_runs` already exists from an older
+image, add missing columns such as `run_at` before creating indexes or querying
+paper-run history. Preserve existing saved users, strategies, and paper runs.
+
 Symbol-specific read endpoints may auto-ingest when local signals are missing. If the provider cannot return data for a ticker, explain, timeseries, and backtest requests should return HTTP 404 with a clear no-market-data message. Pure provider outages should return HTTP 502, and storage or unexpected application failures should not be hidden as invalid-symbol responses. A mixed fallback result where one provider reports no rows and another provider fails to parse or authenticate should stay on the no-market-data path for symbol-specific reads.
 
 ## Safety Boundaries
